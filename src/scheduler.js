@@ -120,21 +120,32 @@ export async function runBenchmark(cores) {
     const results = {};
 
     try {
+        let clockPeak = 0;
+        const captureClockProbe = async (durationMs = 300) => {
+            const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
+            const value = res.gflops || res.score || 0;
+            if (value > clockPeak) clockPeak = value;
+        };
+
+        // Probe from start and keep tracking through the run.
+        await captureClockProbe(400);
+
         results.fp32 = await runCategory('fp32', 'FP32 Compute', workers.compute, 'fp32');
         results.fp64 = await runCategory('fp64', 'FP64 Compute', workers.compute, 'fp64');
         results.integer = await runCategory('int', 'Integer Compute', workers.compute, 'int');
         results.simd = await runCategory('simd', 'SIMD Compute', workers.compute, 'simd');
-
-        results.clock = await runCategory('clock', 'Clock Estimation', [workers.compute[0]], 'clock');
+        await captureClockProbe();
 
         results.membw = await runCategory('membw', 'Memory Bandwidth', [workers.memory], 'membw');
         results.cache_l1 = await runCategory('cache_l1', 'L1 Cache', [workers.memory], 'cache_l1');
         results.cache_l2 = await runCategory('cache_l2', 'L2 Cache', [workers.memory], 'cache_l2');
         results.cache_l3 = await runCategory('cache_l3', 'L3 Cache', [workers.memory], 'cache_l3');
         results.cache_ram = await runCategory('cache_ram', 'RAM Latency', [workers.memory], 'cache_ram');
+        await captureClockProbe();
 
         results.branch_p = await runCategory('branch_p', 'Predictable Branch', [workers.compute[0]], 'branch_predictable');
         results.branch_r = await runCategory('branch_r', 'Random Branch', [workers.compute[0]], 'branch');
+        await captureClockProbe();
 
         results.crypto_aes = await runCategory('crypto_aes', 'AES-GCM', [workers.crypto], 'aes');
         results.crypto_sha = await runCategory('crypto_sha', 'SHA-256', [workers.crypto], 'sha256');
@@ -142,6 +153,14 @@ export async function runBenchmark(cores) {
         // New Compression Tests
         results.compress = await runCategory('compress', 'LZ77 Compression', [workers.compute[0]], 'compress');
         results.decompress = await runCategory('decompress', 'LZ77 Decompression', [workers.compute[0]], 'decompress');
+        await captureClockProbe(500);
+
+        // Report the max observed clock at the end of the full benchmark run.
+        events.dispatchEvent(new CustomEvent('progress', { detail: { name: 'Clock Estimation' } }));
+        results.clock = { peak: clockPeak, sustained: clockPeak };
+        events.dispatchEvent(new CustomEvent('result', {
+            detail: { categoryId: 'clock', peak: clockPeak, sustained: clockPeak }
+        }));
 
         if (cores > 1) {
             const mcResult = await runCategory('multicore', 'Multi-core Scaling', workers.compute, 'fp32', true, false);
