@@ -20,6 +20,18 @@ BenchD is a browser-based CPU benchmark that runs fully on the client.
 
 The goal is to provide a practical browser-side CPU performance snapshot with no server dependency.
 
+## Beta Notice
+
+This is the initial commit and first beta release of the project.
+
+Some benchmark tests may not yet behave exactly as intended, and there are known bugs across:
+
+- Benchmark/test logic
+- Rust/WASM kernels
+- Edge-case behavior in some categories
+
+These issues will be fixed in subsequent releases.
+
 ## Contributions
 
 Contributions are welcome.

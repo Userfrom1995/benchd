@@ -28,6 +28,11 @@ coverage/
 # Rust / WASM build artifacts
 wasm/target/
 
+# Local planning/test docs and pages
+ANALYSIS.md
+PLAN.md
+test.html
+
 # Temporary files
 *.tmp
 *.swp
