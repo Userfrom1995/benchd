@@ -41,10 +41,10 @@ export function computeFinalScore(results) {
         simd: results.simd?.peak || 0,
         int: results.integer?.peak || 0,
         membw: results.membw?.peak || 0,
-        cache_l1: 100 / (results.cache_l1?.peak || 1),
-        cache_l2: 100 / (results.cache_l2?.peak || 1),
-        cache_l3: 100 / (results.cache_l3?.peak || 1),
-        cache_ram: 100 / (results.cache_ram?.peak || 1),
+        cache_l1: results.cache_l1?.peak > 0 ? 100 / results.cache_l1.peak : 0,
+        cache_l2: results.cache_l2?.peak > 0 ? 100 / results.cache_l2.peak : 0,
+        cache_l3: results.cache_l3?.peak > 0 ? 100 / results.cache_l3.peak : 0,
+        cache_ram: results.cache_ram?.peak > 0 ? 100 / results.cache_ram.peak : 0,
         multicore: results.multicore?.aggregate || 0,
         // Branch is a latency metric (ns/op) — invert so lower latency → higher score,
         // matching the same pattern used for cache latency.
@@ -64,7 +64,7 @@ export function computeFinalScore(results) {
     for (const key in BASE_WEIGHTS) {
         const resultKey = RESULT_KEY_MAP[key] || key;
         const val = metrics[key];
-        if (results[resultKey]?.failed || !Number.isFinite(val)) {
+        if (results[resultKey]?.failed || !Number.isFinite(val) || val <= 0) {
             continue;
         }
 
