@@ -1,0 +1,16 @@
+{
+  "name": "benchd-wasm",
+  "type": "module",
+  "description": "High-performance compute kernels for BenchD CPU benchmark",
+  "version": "0.1.0",
+  "files": [
+    "benchd_wasm_bg.wasm",
+    "benchd_wasm.js",
+    "benchd_wasm.d.ts"
+  ],
+  "main": "benchd_wasm.js",
+  "types": "benchd_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,0 +1,34 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python / misc envs (defensive)
+.venv/
+venv/
+.env
+.env.*
+
+# Node
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Rust / WASM build artifacts
+wasm/target/
+
+# Temporary files
+*.tmp
+*.swp
+*~

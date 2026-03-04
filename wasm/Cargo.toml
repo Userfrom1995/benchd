@@ -1,0 +1,23 @@
+[package]
+name = "benchd-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance compute kernels for BenchD CPU benchmark"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.89"
+
+[profile.release]
+# Optimize for speed
+opt-level = 3
+# Enable Link Time Optimization
+lto = true
+# Strip debug info
+strip = true
+# Abort on panic to reduce binary size
+panic = "abort"
+# Optimize code generation for WebAssembly
+codegen-units = 1

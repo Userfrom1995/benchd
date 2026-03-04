@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BenchD — CPU Benchmark</title>
+  <meta name="description"
+    content="A client-side CPU benchmark. Tests floating point, integer, SIMD, memory bandwidth, cache latency, and multi-core performance — all in your browser." />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="BenchD — CPU Benchmark" />
+  <meta property="og:description"
+    content="Benchmark your CPU directly in the browser. No installs. Runs on any device." />
+  <meta property="og:type" content="website" />
+
+  <link rel="stylesheet" href="./assets/style.css" />
+</head>
+
+<body>
+
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header__logo">BenchD</div>
+      <h1 class="header__title">CPU Benchmark</h1>
+      <p class="header__subtitle">
+        Floating point · Integer · SIMD · Memory · Cache · Multi-core · Crypto
+      </p>
+    </header>
+
+    <!-- Service Worker / SharedArrayBuffer Status -->
+    <div class="status-bar">
+      <span id="sab-status">⏳ Initializing…</span>
+    </div>
+
+    <!-- Score Hero -->
+    <section class="score-hero" aria-label="Overall score">
+      <div class="score-hero__label">Overall Score</div>
+      <div class="score-hero__value" id="score-value">—</div>
+      <div class="score-hero__browser" id="browser-info"></div>
+      <div class="score-hero__clock" id="clock-speed-hero">Ready to Benchmark</div>
+
+      <!-- Progress -->
+      <div class="progress-wrap" id="progress-wrap">
+        <div class="progress-label" id="progress-label">Starting…</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+      </div>
+
+      <button class="btn-start" id="btn-start" type="button">
+        ▶ Run Benchmark
+      </button>
+    </section>
+
+    <!-- Category Cards -->
+    <section class="categories" id="categories" aria-label="Benchmark categories">
+
+      <!-- FP32 -->
+      <div class="card" id="card-fp32">
+        <div class="card__header">
+          <span class="card__icon">⚡</span>
+          <span class="card__title">FP32 Compute</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Peak</div>
+            <div class="metric__value pending" id="fp32-peak">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Sustained</div>
+            <div class="metric__value pending" id="fp32-sustained">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- FP64 -->
+      <div class="card" id="card-fp64">
+        <div class="card__header">
+          <span class="card__icon">🔬</span>
+          <span class="card__title">FP64 Compute</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Peak</div>
+            <div class="metric__value pending" id="fp64-peak">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Sustained</div>
+            <div class="metric__value pending" id="fp64-sustained">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIMD -->
+      <div class="card" id="card-simd">
+        <div class="card__header">
+          <span class="card__icon">🧮</span>
+          <span class="card__title">SIMD (Vectorized)</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Peak</div>
+            <div class="metric__value pending" id="simd-peak">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Sustained</div>
+            <div class="metric__value pending" id="simd-sustained">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Integer -->
+      <div class="card" id="card-integer">
+        <div class="card__header">
+          <span class="card__icon">🔢</span>
+          <span class="card__title">Integer Compute</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Peak</div>
+            <div class="metric__value pending" id="int-peak">—</div>
+            <span class="metric__unit">GOPS</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Sustained</div>
+            <div class="metric__value pending" id="int-sustained">—</div>
+            <span class="metric__unit">GOPS</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory Bandwidth -->
+      <div class="card" id="card-membw">
+        <div class="card__header">
+          <span class="card__icon">📡</span>
+          <span class="card__title">Memory Bandwidth</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Peak</div>
+            <div class="metric__value pending" id="membw-peak">—</div>
+            <span class="metric__unit">GB/s</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Sustained</div>
+            <div class="metric__value pending" id="membw-sustained">—</div>
+            <span class="metric__unit">GB/s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cache Latency -->
+      <div class="card" id="card-cache">
+        <div class="card__header">
+          <span class="card__icon">🗃️</span>
+          <span class="card__title">Cache Latency</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">L1</div>
+            <div class="metric__value pending" id="cache-l1">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">L2</div>
+            <div class="metric__value pending" id="cache-l2">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">L3</div>
+            <div class="metric__value pending" id="cache-l3">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">RAM</div>
+            <div class="metric__value pending" id="cache-ram">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Multi-core -->
+      <div class="card" id="card-multicore">
+        <div class="card__header">
+          <span class="card__icon">🔀</span>
+          <span class="card__title">Multi-core</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Aggregate</div>
+            <div class="metric__value pending" id="mc-aggregate">—</div>
+            <span class="metric__unit">GFLOPS</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Efficiency</div>
+            <div class="metric__value pending" id="mc-efficiency">—</div>
+            <span class="metric__unit">%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Branch Prediction -->
+      <div class="card" id="card-branch">
+        <div class="card__header">
+          <span class="card__icon">🌿</span>
+          <span class="card__title">Branch Prediction</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Predictable</div>
+            <div class="metric__value pending" id="branch-pred">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Random</div>
+            <div class="metric__value pending" id="branch-rand">—</div>
+            <span class="metric__unit">ns</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cryptography -->
+      <div class="card" id="card-crypto">
+        <div class="card__header">
+          <span class="card__icon">🔐</span>
+          <span class="card__title">Cryptography</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">AES-GCM</div>
+            <div class="metric__value pending" id="crypto-aes">—</div>
+            <span class="metric__unit">GB/s</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">SHA-256</div>
+            <div class="metric__value pending" id="crypto-sha">—</div>
+            <span class="metric__unit">MH/s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compression -->
+      <div class="card" id="card-compress">
+        <div class="card__header">
+          <span class="card__icon">📦</span>
+          <span class="card__title">Compression</span>
+        </div>
+        <div class="card__metrics">
+          <div class="metric">
+            <div class="metric__label">Encode</div>
+            <div class="metric__value pending" id="compress-encode">—</div>
+            <span class="metric__unit">MB/s</span>
+          </div>
+          <div class="metric">
+            <div class="metric__label">Decode</div>
+            <div class="metric__value pending" id="compress-decode">—</div>
+            <span class="metric__unit">MB/s</span>
+          </div>
+        </div>
+      </div>
+
+    </section><!-- /.categories -->
+
+    <!-- Methodology -->
+    <section class="methodology" id="methodology">
+      <h2 class="methodology__title">How it works</h2>
+      <p class="methodology__text">
+        BenchD runs intensive <strong>WebAssembly (WASM)</strong> kernels directly in your browser.
+        The final score is a weighted average of individual tests, scaled using <code>log1p(x)</code> to reward
+        performance gains while preventing numerical explosion.
+      </p>
+      <div class="methodology__grid">
+        <div class="methodology__item"><strong>FP32/64</strong>: 30% (Floating Point math)</div>
+        <div class="methodology__item"><strong>SIMD/Int</strong>: 20% (Vectorization & Logic)</div>
+        <div class="methodology__item"><strong>Memory</strong>: 20% (Data throughput)</div>
+        <div class="methodology__item"><strong>Cache</strong>: 10% (L1/L2/L3/RAM Latency)</div>
+        <div class="methodology__item"><strong>Multi-core</strong>: 10% (Scaling efficiency)</div>
+        <div class="methodology__item"><strong>Advanced</strong>: 10% (Branch, Crypto, LZ77)</div>
+      </div>
+      <p class="methodology__note">
+        *If a test fails on your hardware, its weight is automatically redistributed to ensure a fair overall score.
+      </p>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>
+        All computation runs locally in your browser. Nothing is sent to any server.<br />
+        Compare scores only within the same browser and version.
+        <a href="https://github.com/Userfrom1995/benchd" target="_blank" rel="noopener">GitHub</a>
+      </p>
+    </footer>
+
+  </div><!-- /.app -->
+
+  <script src="./src/main.js" type="module"></script>
+</body>
+
+</html>
