@@ -31,15 +31,12 @@ export function bench_clock(iterations: number, seed: number): number;
  */
 export function bench_compress(data: Uint8Array, window_size: number): number;
 
-/**
- * Simple LZ77-style decompression kernel.
- * Iterates through "commands" (literal vs match) to reconstruct data.
- */
 export function bench_decompress(compressed_commands: Uint32Array, iterations: number): number;
 
 /**
  * Runs a hot loop of F32 operations (Multiply & Add)
  * We take start_a, b, and c from JS so the compiler CANNOT constant-fold the loop.
+ * Note: Does NOT use FMA (fused multiply-add) to test basic ALU throughput.
  */
 export function bench_fp32(iterations: number, start_a: number, b: number, c: number): number;
 
@@ -53,6 +50,18 @@ export function bench_int(iterations: number, start_a: bigint, b: bigint, c: big
 export function bench_memory_bandwidth(data: Float64Array): number;
 
 export function bench_simd_auto(iterations: number, start_a: number, b_val: number, c_val: number): number;
+
+/**
+ * Calibrates the number of iterations needed to get a stable timing measurement.
+ * This should be called from JavaScript to determine the appropriate iteration count.
+ */
+export function calibrate_clock(iterations: number): number;
+
+/**
+ * Helper function to generate a randomized pointer-chasing array.
+ * This should be called from JavaScript to prepare the data.
+ */
+export function generate_random_pointer_array(size: number): Uint32Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -68,7 +77,12 @@ export interface InitOutput {
     readonly bench_int: (a: number, b: bigint, c: bigint, d: bigint) => bigint;
     readonly bench_memory_bandwidth: (a: number, b: number, c: number) => number;
     readonly bench_simd_auto: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_export: (a: number, b: number) => number;
+    readonly calibrate_clock: (a: number) => number;
+    readonly generate_random_pointer_array: (a: number, b: number) => void;
+    readonly __wbindgen_export: (a: number) => void;
+    readonly __wbindgen_export2: (a: number, b: number) => number;
+    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+    readonly __wbindgen_export3: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
