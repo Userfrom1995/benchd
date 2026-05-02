@@ -4,6 +4,7 @@ import { computeFinalScore } from '../score.js';
 const els = {
     scoreValue: document.getElementById('score-value'),
     btnStart: document.getElementById('btn-start'),
+    btnExport: document.getElementById('btn-export'),
     progressWrap: document.getElementById('progress-wrap'),
     progressLabel: document.getElementById('progress-label'),
     progressFill: document.getElementById('progress-fill'),
@@ -32,6 +33,7 @@ const uiMap = {
 
 let currentProgress = 0;
 let totalCategories = 16;
+let lastReport = null;
 
 function animateScore(target, duration = 1500) {
     const start = 0;
@@ -69,15 +71,49 @@ function updateMetric(id, val, cls) {
     el.className = `metric__value ${cls}`;
 }
 
+function createResultReport(rawResults, score, cores) {
+    return {
+        app: 'BenchD',
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        environment: {
+            userAgent: navigator.userAgent,
+            hardwareConcurrency: navigator.hardwareConcurrency,
+            requestedWorkers: cores,
+            crossOriginIsolated: window.__benchd?.crossOriginIsolated === true,
+            sharedArrayBuffer: window.__benchd?.sabAvailable === true
+        },
+        score,
+        results: rawResults
+    };
+}
+
+function downloadReport(report) {
+    if (!report) return;
+
+    const json = JSON.stringify(report, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `benchd-results-${report.generatedAt.replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
 export function attachUI() {
     els.btnStart.addEventListener('click', async () => {
         els.btnStart.disabled = true;
+        els.btnExport.disabled = true;
         els.btnStart.textContent = 'Running…';
         els.scoreValue.textContent = '0';
         els.progressWrap.classList.add('visible');
         els.progressFill.style.width = '0%';
         currentProgress = 0;
-        els.clockHero.textContent = 'Estimating Clock Speed…';
+        lastReport = null;
+        els.clockHero.textContent = 'Measuring WASM Loop Throughput…';
 
         Object.values(uiMap).forEach(ids => {
             if (ids.peak) updateMetric(ids.peak, '—', 'pending');
@@ -91,11 +127,13 @@ export function attachUI() {
             await initScheduler(cores);
 
             const rawResults = await runBenchmark(cores);
-            const { total } = computeFinalScore(rawResults);
+            const score = computeFinalScore(rawResults);
+            lastReport = createResultReport(rawResults, score, cores);
 
             els.progressLabel.textContent = 'Benchmark Complete';
             els.progressFill.style.width = '100%';
-            animateScore(total);
+            animateScore(score.total);
+            els.btnExport.disabled = false;
 
         } catch (err) {
             console.error(err);
@@ -104,6 +142,10 @@ export function attachUI() {
             els.btnStart.disabled = false;
             els.btnStart.textContent = 'Run Again';
         }
+    });
+
+    els.btnExport.addEventListener('click', () => {
+        downloadReport(lastReport);
     });
 
     onProgress((detail) => {
@@ -118,9 +160,7 @@ export function attachUI() {
         const { categoryId, peak, sustained, efficiency, failed } = detail;
 
         if (categoryId === 'clock') {
-            // peak is already in GOPS (= ops/sec / 1e9); for a 1-op/cycle kernel that ≈ GHz
-            const ghz = peak;
-            els.clockHero.textContent = `~${ghz.toFixed(2)} GHz Active Clock`;
+            els.clockHero.textContent = `${peak.toFixed(2)} GOPS WASM Loop Rate`;
             return;
         }
 

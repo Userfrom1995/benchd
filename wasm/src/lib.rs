@@ -1,11 +1,15 @@
-// use rand::seq::SliceRandom;
-use rand::thread_rng;
+use rand::rng;
+use std::cell::RefCell;
 use std::hint::black_box;
 use wasm_bindgen::prelude::*;
 
+thread_local! {
+    static MEMORY_BANDWIDTH_BUF: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+}
+
 // ── 1. Floating Point 32 (Single Precision) ────────────
 
-/// Runs a hot loop of F32 operations (Multiply & Add)
+/// Runs independent F32 multiply-add streams to measure throughput.
 /// We take start_a, b, and c from JS so the compiler CANNOT constant-fold the loop.
 /// Note: Does NOT use FMA (fused multiply-add) to test basic ALU throughput.
 #[wasm_bindgen]
@@ -16,22 +20,27 @@ pub fn bench_fp32(iterations: u32, start_a: f32, b: f32, c: f32) -> f32 {
         return start_a;
     }
 
-    let mut a = start_a;
+    let mut a0 = start_a;
+    let mut a1 = start_a + 0.001;
+    let mut a2 = start_a + 0.002;
+    let mut a3 = start_a + 0.003;
+    let mut a4 = start_a + 0.004;
+    let mut a5 = start_a + 0.005;
+    let mut a6 = start_a + 0.006;
+    let mut a7 = start_a + 0.007;
 
     for _ in 0..iterations {
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
+        a0 = (a0 * b) + c;
+        a1 = (a1 * b) + c;
+        a2 = (a2 * b) + c;
+        a3 = (a3 * b) + c;
+        a4 = (a4 * b) + c;
+        a5 = (a5 * b) + c;
+        a6 = (a6 * b) + c;
+        a7 = (a7 * b) + c;
     }
 
-    a
+    black_box(a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7)
 }
 
 // ── 2. Floating Point 64 (Double Precision) ────────────
@@ -44,22 +53,27 @@ pub fn bench_fp64(iterations: u32, start_a: f64, b: f64, c: f64) -> f64 {
         return start_a;
     }
 
-    let mut a = start_a;
+    let mut a0 = start_a;
+    let mut a1 = start_a + 0.001;
+    let mut a2 = start_a + 0.002;
+    let mut a3 = start_a + 0.003;
+    let mut a4 = start_a + 0.004;
+    let mut a5 = start_a + 0.005;
+    let mut a6 = start_a + 0.006;
+    let mut a7 = start_a + 0.007;
 
     for _ in 0..iterations {
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
-        a = (a * b) + c;
+        a0 = (a0 * b) + c;
+        a1 = (a1 * b) + c;
+        a2 = (a2 * b) + c;
+        a3 = (a3 * b) + c;
+        a4 = (a4 * b) + c;
+        a5 = (a5 * b) + c;
+        a6 = (a6 * b) + c;
+        a7 = (a7 * b) + c;
     }
 
-    a
+    black_box(a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7)
 }
 
 // ── 3. Integer ────────────
@@ -73,22 +87,35 @@ pub fn bench_int(iterations: u32, start_a: u64, b: u64, c: u64) -> u64 {
         return start_a;
     }
 
-    let mut a = start_a;
+    let mut a0 = start_a;
+    let mut a1 = start_a.wrapping_add(1);
+    let mut a2 = start_a.wrapping_add(2);
+    let mut a3 = start_a.wrapping_add(3);
+    let mut a4 = start_a.wrapping_add(4);
+    let mut a5 = start_a.wrapping_add(5);
+    let mut a6 = start_a.wrapping_add(6);
+    let mut a7 = start_a.wrapping_add(7);
 
     for _ in 0..iterations {
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
-        a = a.wrapping_mul(b).wrapping_add(c);
+        a0 = a0.wrapping_mul(b).wrapping_add(c);
+        a1 = a1.wrapping_mul(b).wrapping_add(c);
+        a2 = a2.wrapping_mul(b).wrapping_add(c);
+        a3 = a3.wrapping_mul(b).wrapping_add(c);
+        a4 = a4.wrapping_mul(b).wrapping_add(c);
+        a5 = a5.wrapping_mul(b).wrapping_add(c);
+        a6 = a6.wrapping_mul(b).wrapping_add(c);
+        a7 = a7.wrapping_mul(b).wrapping_add(c);
     }
 
-    a
+    black_box(
+        a0.wrapping_add(a1)
+            .wrapping_add(a2)
+            .wrapping_add(a3)
+            .wrapping_add(a4)
+            .wrapping_add(a5)
+            .wrapping_add(a6)
+            .wrapping_add(a7),
+    )
 }
 
 // ── 4. SIMD (F32 x 4) ────────────
@@ -118,51 +145,66 @@ fn bench_simd_impl(iterations: u32, start_a: f32, b_val: f32, c_val: f32) -> f32
 
 #[allow(dead_code)]
 fn bench_simd_scalar(iterations: u32, start_a: f32, b_val: f32, c_val: f32) -> f32 {
-    let mut a = [start_a; 4];
+    let mut a0 = [start_a; 4];
+    let mut a1 = [start_a + 0.001; 4];
+    let mut a2 = [start_a + 0.002; 4];
+    let mut a3 = [start_a + 0.003; 4];
     let b = [b_val; 4];
     let c = [c_val; 4];
 
     for _ in 0..iterations {
         for i in 0..4 {
-            a[i] = a[i] * b[i] + c[i];
-        }
-        for i in 0..4 {
-            a[i] = a[i] * b[i] + c[i];
-        }
-        for i in 0..4 {
-            a[i] = a[i] * b[i] + c[i];
-        }
-        for i in 0..4 {
-            a[i] = a[i] * b[i] + c[i];
-        }
-        for i in 0..4 {
-            a[i] = a[i] * b[i] + c[i];
+            a0[i] = a0[i] * b[i] + c[i];
+            a1[i] = a1[i] * b[i] + c[i];
+            a2[i] = a2[i] * b[i] + c[i];
+            a3[i] = a3[i] * b[i] + c[i];
         }
     }
 
-    a[0] + a[1] + a[2] + a[3]
+    black_box(
+        a0.iter().sum::<f32>()
+            + a1.iter().sum::<f32>()
+            + a2.iter().sum::<f32>()
+            + a3.iter().sum::<f32>(),
+    )
 }
 
 #[cfg(target_feature = "simd128")]
 unsafe fn bench_simd128(iterations: u32, start_a: f32, b_val: f32, c_val: f32) -> f32 {
     use std::arch::wasm32::{f32x4_add, f32x4_extract_lane, f32x4_mul, f32x4_splat, v128};
 
-    let mut a: v128 = f32x4_splat(start_a);
+    let mut a0: v128 = f32x4_splat(start_a);
+    let mut a1: v128 = f32x4_splat(start_a + 0.001);
+    let mut a2: v128 = f32x4_splat(start_a + 0.002);
+    let mut a3: v128 = f32x4_splat(start_a + 0.003);
     let b: v128 = f32x4_splat(b_val);
     let c: v128 = f32x4_splat(c_val);
 
     for _ in 0..iterations {
-        a = f32x4_add(f32x4_mul(a, b), c);
-        a = f32x4_add(f32x4_mul(a, b), c);
-        a = f32x4_add(f32x4_mul(a, b), c);
-        a = f32x4_add(f32x4_mul(a, b), c);
-        a = f32x4_add(f32x4_mul(a, b), c);
+        a0 = f32x4_add(f32x4_mul(a0, b), c);
+        a1 = f32x4_add(f32x4_mul(a1, b), c);
+        a2 = f32x4_add(f32x4_mul(a2, b), c);
+        a3 = f32x4_add(f32x4_mul(a3, b), c);
     }
 
-    f32x4_extract_lane::<0>(a)
-        + f32x4_extract_lane::<1>(a)
-        + f32x4_extract_lane::<2>(a)
-        + f32x4_extract_lane::<3>(a)
+    black_box(
+        f32x4_extract_lane::<0>(a0)
+            + f32x4_extract_lane::<1>(a0)
+            + f32x4_extract_lane::<2>(a0)
+            + f32x4_extract_lane::<3>(a0)
+            + f32x4_extract_lane::<0>(a1)
+            + f32x4_extract_lane::<1>(a1)
+            + f32x4_extract_lane::<2>(a1)
+            + f32x4_extract_lane::<3>(a1)
+            + f32x4_extract_lane::<0>(a2)
+            + f32x4_extract_lane::<1>(a2)
+            + f32x4_extract_lane::<2>(a2)
+            + f32x4_extract_lane::<3>(a2)
+            + f32x4_extract_lane::<0>(a3)
+            + f32x4_extract_lane::<1>(a3)
+            + f32x4_extract_lane::<2>(a3)
+            + f32x4_extract_lane::<3>(a3),
+    )
 }
 
 // ── 5. Memory Bandwidth ────────────
@@ -189,6 +231,22 @@ pub fn bench_memory_bandwidth(data: &mut [f64]) -> f64 {
     }
 
     sum
+}
+
+#[wasm_bindgen]
+#[inline(never)]
+pub fn bench_wasm_memory_bandwidth(elements: usize) -> f64 {
+    if elements == 0 {
+        return 0.0;
+    }
+
+    MEMORY_BANDWIDTH_BUF.with(|cell| {
+        let mut data = cell.borrow_mut();
+        if data.len() != elements {
+            data.resize(elements, 1.0);
+        }
+        bench_memory_bandwidth(&mut data)
+    })
 }
 
 // ── 6. Cache Latency ────────────
@@ -230,7 +288,7 @@ pub fn generate_random_pointer_array(size: usize) -> Vec<u32> {
 
     // Fisher-Yates shuffle for true random walk (defeats prefetcher)
     use rand::seq::SliceRandom;
-    let mut rng = thread_rng();
+    let mut rng = rng();
     indices.shuffle(&mut rng);
 
     // Create the linked list in an array
@@ -279,9 +337,10 @@ pub fn bench_branch_predict(data: &[u8], iterations: u32) -> u32 {
     a ^ b
 }
 
-// ── 8. Clock Speed Estimation ────────────
+// ── 8. WASM Loop Throughput ────────────
 
-/// Tight loop of simple increments to estimate raw cycle speed.
+/// Tight loop of simple increments. This reports browser/WASM loop throughput,
+/// not real CPU clock speed.
 #[wasm_bindgen]
 #[inline(never)]
 pub fn bench_clock(iterations: u32, seed: u32) -> u32 {
@@ -428,13 +487,13 @@ mod tests {
     #[test]
     fn test_bench_fp32_basic() {
         let result = bench_fp32(100, 1.0, 0.99999, 0.00001);
-        assert!(result >= 0.0 && result <= 2.0);
+        assert!(result >= 0.0 && result <= 16.0);
     }
 
     #[test]
     fn test_bench_fp64_basic() {
         let result = bench_fp64(100, 1.0, 0.9999999, 0.0000001);
-        assert!(result >= 0.0 && result <= 2.0);
+        assert!(result >= 0.0 && result <= 16.0);
     }
 
     #[test]
@@ -457,10 +516,9 @@ mod tests {
 
     #[test]
     fn test_bench_int_wrapping() {
-        // Test that wrapping arithmetic works correctly
-        // With u64::MAX, after 1 iteration (10 operations): (MAX * 1) + 1 = 0 (wraparound) then +1 nine more times = 9
+        // With eight independent accumulators, MAX..MAX+7 each wrap once after +1.
         let result = bench_int(1, u64::MAX, 1, 1);
-        assert_eq!(result, 9);
+        assert_eq!(result, 28);
     }
 
     #[test]
@@ -471,6 +529,12 @@ mod tests {
         for val in data {
             assert_eq!(val, 100.0);
         }
+    }
+
+    #[test]
+    fn test_bench_wasm_memory_bandwidth_basic() {
+        let result = bench_wasm_memory_bandwidth(128);
+        assert!(result > 0.0);
     }
 
     #[test]

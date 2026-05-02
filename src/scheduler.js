@@ -82,14 +82,17 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
         //    Peak  = best single window (burst / turbo performance).
         //    Sustained = average across all windows (thermal steady-state).
         const windowScores = [];
+        const windows = [];
         for (let w = 0; w < NUM_WINDOWS; w++) {
             let windowScore;
             if (isMulti) {
                 const res = await Promise.all(workerPool.map(worker => runWorkerTask(worker, type, windowMs)));
                 windowScore = res.reduce((sum, r) => sum + (r.gflops || r.score || 0), 0);
+                windows.push(res);
             } else {
                 const res = await runWorkerTask(workerPool[0], type, windowMs);
                 windowScore = res.gflops || res.score || 0;
+                windows.push(res);
             }
             windowScores.push(windowScore);
         }
@@ -100,17 +103,17 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
 
         if (emitResult) {
             events.dispatchEvent(new CustomEvent('result', {
-                detail: { categoryId, peak, sustained }
+                detail: { categoryId, peak, sustained, samples: windowScores }
             }));
         }
 
-        return { peak, sustained };
+        return { peak, sustained, samples: windowScores, windows };
     } catch (err) {
         console.error(`Benchmark failed for ${categoryId}:`, err);
         events.dispatchEvent(new CustomEvent('result', {
-            detail: { categoryId, peak: 0, sustained: 0, failed: true, error: err.message }
+            detail: { categoryId, peak: 0, sustained: 0, samples: [], failed: true, error: err.message }
         }));
-        return { peak: 0, sustained: 0, failed: true };
+        return { peak: 0, sustained: 0, samples: [], windows: [], failed: true, error: err.message };
     }
 }
 
@@ -121,10 +124,12 @@ export async function runBenchmark(cores) {
 
     try {
         let clockPeak = 0;
+        const clockProbes = [];
         const captureClockProbe = async (durationMs = 300) => {
             const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
             const value = res.gflops || res.score || 0;
             if (value > clockPeak) clockPeak = value;
+            clockProbes.push({ durationMs, value, raw: res });
         };
 
         // Probe from start and keep tracking through the run.
@@ -136,11 +141,11 @@ export async function runBenchmark(cores) {
         results.simd = await runCategory('simd', 'SIMD Compute', workers.compute, 'simd');
         await captureClockProbe();
 
-        results.membw = await runCategory('membw', 'Memory Bandwidth', [workers.memory], 'membw');
-        results.cache_l1 = await runCategory('cache_l1', 'L1 Cache', [workers.memory], 'cache_l1');
-        results.cache_l2 = await runCategory('cache_l2', 'L2 Cache', [workers.memory], 'cache_l2');
-        results.cache_l3 = await runCategory('cache_l3', 'L3 Cache', [workers.memory], 'cache_l3');
-        results.cache_ram = await runCategory('cache_ram', 'RAM Latency', [workers.memory], 'cache_ram');
+        results.membw = await runCategory('membw', 'WASM Memory Bandwidth', [workers.memory], 'membw');
+        results.cache_l1 = await runCategory('cache_l1', '32KB Random Walk', [workers.memory], 'cache_l1');
+        results.cache_l2 = await runCategory('cache_l2', '256KB Random Walk', [workers.memory], 'cache_l2');
+        results.cache_l3 = await runCategory('cache_l3', '8MB Random Walk', [workers.memory], 'cache_l3');
+        results.cache_ram = await runCategory('cache_ram', '64MB Random Walk', [workers.memory], 'cache_ram');
         await captureClockProbe();
 
         results.branch_p = await runCategory('branch_p', 'Predictable Branch', [workers.compute[0]], 'branch_predictable');
@@ -155,11 +160,16 @@ export async function runBenchmark(cores) {
         results.decompress = await runCategory('decompress', 'LZ77 Decompression', [workers.compute[0]], 'decompress');
         await captureClockProbe(500);
 
-        // Report the max observed clock at the end of the full benchmark run.
-        events.dispatchEvent(new CustomEvent('progress', { detail: { name: 'Clock Estimation' } }));
-        results.clock = { peak: clockPeak, sustained: clockPeak };
+        // Report the max observed loop throughput at the end of the full benchmark run.
+        events.dispatchEvent(new CustomEvent('progress', { detail: { name: 'WASM Loop Throughput' } }));
+        results.clock = {
+            peak: clockPeak,
+            sustained: clockPeak,
+            samples: clockProbes.map(probe => probe.value),
+            probes: clockProbes
+        };
         events.dispatchEvent(new CustomEvent('result', {
-            detail: { categoryId: 'clock', peak: clockPeak, sustained: clockPeak }
+            detail: { categoryId: 'clock', peak: clockPeak, sustained: clockPeak, samples: results.clock.samples }
         }));
 
         if (cores > 1) {
@@ -168,9 +178,21 @@ export async function runBenchmark(cores) {
                 const theoreticalMax = (results.fp32.peak || 0) * cores;
                 const efficiency = theoreticalMax > 0 ? (mcResult.peak / theoreticalMax) * 100 : 0;
                 events.dispatchEvent(new CustomEvent('result', {
-                    detail: { categoryId: 'multicore', peak: mcResult.peak, sustained: mcResult.sustained, efficiency }
+                    detail: {
+                        categoryId: 'multicore',
+                        peak: mcResult.peak,
+                        sustained: mcResult.sustained,
+                        efficiency,
+                        samples: mcResult.samples
+                    }
                 }));
-                results.multicore = { aggregate: mcResult.peak, sustained: mcResult.sustained, efficiency };
+                results.multicore = {
+                    aggregate: mcResult.peak,
+                    sustained: mcResult.sustained,
+                    efficiency,
+                    samples: mcResult.samples,
+                    windows: mcResult.windows
+                };
             }
         }
 

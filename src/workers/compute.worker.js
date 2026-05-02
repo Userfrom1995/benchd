@@ -38,23 +38,25 @@ self.onmessage = async (e) => {
 
         // Chunk size: how many iterations per WASM call
         const chunkIters = 5_000_000;
+        const scalarThroughputOps = chunkIters * 8 * 2;
+        const simdThroughputOps = chunkIters * 4 * 4 * 2;
 
         while (now - start < durationMs) {
             if (type === 'fp32') {
                 bench_fp32(chunkIters, 1.0, 0.99999, 0.00001);
-                totalOps += chunkIters * 10;
+                totalOps += scalarThroughputOps;
             }
             else if (type === 'fp64') {
                 bench_fp64(chunkIters, 1.0, 0.9999999, 0.0000001);
-                totalOps += chunkIters * 10;
+                totalOps += scalarThroughputOps;
             }
             else if (type === 'int') {
                 bench_int(chunkIters, 1n, 2n, 3n);
-                totalOps += chunkIters * 10;
+                totalOps += scalarThroughputOps;
             }
             else if (type === 'simd') {
                 bench_simd_auto(chunkIters, 1.0, 0.99999, 0.00001);
-                totalOps += chunkIters * 20; // estimate for vectorized
+                totalOps += simdThroughputOps;
             }
             else if (type === 'branch') {
                 if (!self.branchData) {
@@ -144,11 +146,17 @@ self.onmessage = async (e) => {
             // Branch metric is latency (ns/op) — lower is better.
             // Use result.score so the scheduler picks it up separately from gflops.
             result.score = totalOps > 0 ? (result.timeMs * 1_000_000) / totalOps : 0;
+            result.unit = 'ns/op';
         } else if (type === 'compress' || type === 'decompress') {
             // Compression card is labeled MB/s, so report MB/s directly.
             result.score = (totalOps / (result.timeMs / 1000)) / 1e6;
+            result.unit = 'MB/s';
+        } else if (type === 'int' || type === 'clock') {
+            result.score = (totalOps / (result.timeMs / 1000)) / 1e9;
+            result.unit = 'GOPS';
         } else {
             result.gflops = (totalOps / (result.timeMs / 1000)) / 1e9;
+            result.unit = 'GFLOPS';
         }
 
         postMessage(result);

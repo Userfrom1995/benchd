@@ -1,5 +1,5 @@
 import init, {
-    bench_memory_bandwidth,
+    bench_wasm_memory_bandwidth,
     bench_cache_latency
 } from '../../wasm/pkg/benchd_wasm.js';
 
@@ -12,10 +12,8 @@ init().then(() => {
     postMessage({ type: 'error', error: err.message });
 });
 
-let localBandwidthBuf = null;
-
 self.onmessage = async (e) => {
-    const { id, type, durationMs, sharedBuf } = e.data;
+    const { id, type, durationMs } = e.data;
 
     if (!wasmReady) return;
 
@@ -25,25 +23,13 @@ self.onmessage = async (e) => {
         let now = start;
 
         if (type === 'membw') {
-            let buf;
-            if (sharedBuf) {
-                buf = new Float64Array(sharedBuf);
-            } else {
-                if (!localBandwidthBuf) {
-                    localBandwidthBuf = new Float64Array(1024 * 1024 * 16); // 128MB
-                }
-                buf = localBandwidthBuf;
-            }
-
             let passes = 0;
             let totalBytes = 0;
-            // wasm-bindgen copies JS slice -> WASM memory and back around each call,
-            // plus the kernel itself does one full read + one full write.
-            // Count all moved bytes so the reported throughput reflects the whole pipeline.
-            const bytesPerPass = buf.byteLength * 4;
+            const elements = 1024 * 1024 * 16; // 128MB of f64 values inside WASM memory.
+            const bytesPerPass = elements * Float64Array.BYTES_PER_ELEMENT * 2;
 
             while (now - start < durationMs) {
-                bench_memory_bandwidth(buf);
+                bench_wasm_memory_bandwidth(elements);
                 totalBytes += bytesPerPass;
                 passes++;
                 now = performance.now();
@@ -51,6 +37,9 @@ self.onmessage = async (e) => {
 
             result.timeMs = now - start;
             result.score = (totalBytes / (result.timeMs / 1000)) / 1e9; // GB/s
+            result.unit = 'GB/s';
+            result.bytesPerPass = bytesPerPass;
+            result.passes = passes;
         }
         else if (type === 'cache_l1' || type === 'cache_l2' || type === 'cache_l3' || type === 'cache_ram') {
             let sizeBytes;
@@ -84,6 +73,9 @@ self.onmessage = async (e) => {
             result.timeMs = now - start;
             const totalAccesses = passes * accessesPerPass;
             result.score = (result.timeMs * 1_000_000) / totalAccesses; // ns
+            result.unit = 'ns/access';
+            result.sizeBytes = sizeBytes;
+            result.accesses = totalAccesses;
         }
 
         postMessage(result);

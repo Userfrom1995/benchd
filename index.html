@@ -53,6 +53,9 @@
       <button class="btn-start" id="btn-start" type="button">
         ▶ Run Benchmark
       </button>
+      <button class="btn-export" id="btn-export" type="button" disabled>
+        Export JSON
+      </button>
     </section>
 
     <!-- Category Cards -->
@@ -138,11 +141,11 @@
         </div>
       </div>
 
-      <!-- Memory Bandwidth -->
+      <!-- WASM Memory Bandwidth -->
       <div class="card" id="card-membw">
         <div class="card__header">
           <span class="card__icon">📡</span>
-          <span class="card__title">Memory Bandwidth</span>
+          <span class="card__title">WASM Memory Bandwidth</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -158,30 +161,30 @@
         </div>
       </div>
 
-      <!-- Cache Latency -->
+      <!-- Random Walk Latency -->
       <div class="card" id="card-cache">
         <div class="card__header">
           <span class="card__icon">🗃️</span>
-          <span class="card__title">Cache Latency</span>
+          <span class="card__title">Random Walk Latency</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
-            <div class="metric__label">L1</div>
+            <div class="metric__label">32KB</div>
             <div class="metric__value pending" id="cache-l1">—</div>
             <span class="metric__unit">ns</span>
           </div>
           <div class="metric">
-            <div class="metric__label">L2</div>
+            <div class="metric__label">256KB</div>
             <div class="metric__value pending" id="cache-l2">—</div>
             <span class="metric__unit">ns</span>
           </div>
           <div class="metric">
-            <div class="metric__label">L3</div>
+            <div class="metric__label">8MB</div>
             <div class="metric__value pending" id="cache-l3">—</div>
             <span class="metric__unit">ns</span>
           </div>
           <div class="metric">
-            <div class="metric__label">RAM</div>
+            <div class="metric__label">64MB</div>
             <div class="metric__value pending" id="cache-ram">—</div>
             <span class="metric__unit">ns</span>
           </div>
@@ -281,8 +284,8 @@
       <div class="methodology__grid">
         <div class="methodology__item"><strong>FP32/64</strong>: 30% (Floating Point math)</div>
         <div class="methodology__item"><strong>SIMD/Int</strong>: 20% (Vectorization & Logic)</div>
-        <div class="methodology__item"><strong>Memory</strong>: 20% (Data throughput)</div>
-        <div class="methodology__item"><strong>Cache</strong>: 10% (L1/L2/L3/RAM Latency)</div>
+        <div class="methodology__item"><strong>Memory</strong>: 20% (WASM memory throughput)</div>
+        <div class="methodology__item"><strong>Latency</strong>: 10% (32KB to 64MB random walks)</div>
         <div class="methodology__item"><strong>Multi-core</strong>: 10% (Scaling efficiency)</div>
         <div class="methodology__item"><strong>Advanced</strong>: 10% (Branch, Crypto, LZ77)</div>
       </div>

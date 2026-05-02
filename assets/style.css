@@ -221,6 +221,35 @@ body::before {
     transform: none;
 }
 
+.btn-export {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.75rem;
+    margin-left: 0.75rem;
+    padding: 0.7rem 1.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    color: var(--text);
+    background: var(--bg-card-2);
+    border: 1px solid var(--border-bright);
+    border-radius: 100px;
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition), transform var(--transition);
+}
+
+.btn-export:hover:not(:disabled) {
+    border-color: var(--accent-2);
+    color: var(--accent-2);
+    transform: translateY(-1px);
+}
+
+.btn-export:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 /* ── Progress bar ──────────────────────────────────────────────────── */
 .progress-wrap {
     margin: 1.5rem 0;

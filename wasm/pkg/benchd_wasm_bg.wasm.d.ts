@@ -11,6 +11,7 @@ export const bench_fp64: (a: number, b: number, c: number, d: number) => number;
 export const bench_int: (a: number, b: bigint, c: bigint, d: bigint) => bigint;
 export const bench_memory_bandwidth: (a: number, b: number, c: number) => number;
 export const bench_simd_auto: (a: number, b: number, c: number, d: number) => number;
+export const bench_wasm_memory_bandwidth: (a: number) => number;
 export const calibrate_clock: (a: number) => number;
 export const generate_random_pointer_array: (a: number, b: number) => void;
 export const __wbindgen_export: (a: number) => void;
