@@ -51,7 +51,12 @@ self.onmessage = async (e) => {
             }
 
             result.timeMs = now - start;
-            result.score = (totalBytes / (result.timeMs / 1000)) / 1e9; // GB/s
+            // Timing hygiene: NaN/zero guard — never propagate Infinity/NaN.
+            if (!Number.isFinite(result.timeMs) || result.timeMs <= 0 || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+                result.score = 0;
+            } else {
+                result.score = (totalBytes / (result.timeMs / 1000)) / 1e9; // GB/s
+            }
             result.unit = 'GB/s';
             result.bytesPerPass = bytesPerPass;
             result.passes = passes;
@@ -104,7 +109,12 @@ self.onmessage = async (e) => {
 
             result.timeMs = now - start;
             const totalAccesses = passes * accessesPerPass;
-            result.score = (result.timeMs * 1_000_000) / totalAccesses; // ns
+            // Timing hygiene: NaN/zero guard — never propagate Infinity/NaN.
+            if (!Number.isFinite(result.timeMs) || result.timeMs <= 0 || !Number.isFinite(totalAccesses) || totalAccesses <= 0) {
+                result.score = 0;
+            } else {
+                result.score = (result.timeMs * 1_000_000) / totalAccesses; // ns
+            }
             result.unit = 'ns/access';
             result.sizeBytes = sizeBytes;
             result.accesses = totalAccesses;

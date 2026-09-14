@@ -39,6 +39,9 @@ self.onmessage = async (e) => {
         let now = start;
         let totalOps = 0;
 
+        // Adaptive chunk: fixed 5M iters per WASM call keeps JS timer/bridge
+        // overhead negligible while letting ~300ms windows be filled in a few
+        // passes. Kept fixed (not duration-scaled) for cross-machine comparability.
         // Chunk size: how many iterations per WASM call
         const chunkIters = 5_000_000;
         const scalarThroughputOps = chunkIters * 8 * 2;
@@ -112,7 +115,12 @@ self.onmessage = async (e) => {
                 } else {
                     bench_branch_predict(self.branchData, branchIters);
                 }
-                totalOps += branchIters;
+                // Match Rust tail fix: Rust executes outer*len + rem ops where
+                // outer=floor(iters/len), rem=iters%len. Count the same here.
+                const branchLen = usePersistentBranch
+                    ? (1024 * 1024)
+                    : (self.branchData?.length || (1024 * 1024));
+                totalOps += Math.floor(branchIters / branchLen) * branchLen + (branchIters % branchLen);
             }
             else if (type === 'branch_predictable') {
                 const branchIters = Math.max(1024 * 1024, chunkIters / 10);
@@ -121,7 +129,11 @@ self.onmessage = async (e) => {
                 } else {
                     bench_branch_predict(self.predictableData, branchIters);
                 }
-                totalOps += branchIters;
+                // Match Rust tail fix (see above).
+                const branchLen = usePersistentBranch
+                    ? (1024 * 1024)
+                    : (self.predictableData?.length || (1024 * 1024));
+                totalOps += Math.floor(branchIters / branchLen) * branchLen + (branchIters % branchLen);
             }
             else if (type === 'clock') {
                 // Vary seed each call so the compiler/JIT cannot treat calls as equivalent.
@@ -188,20 +200,26 @@ self.onmessage = async (e) => {
         if (type === 'simd' && hardwareSimd !== null) {
             result.hardwareSimd = hardwareSimd;
         }
+        // Timing hygiene: NaN/zero guard — any non-positive or non-finite
+        // window yields 0 so the scheduler never propagates Infinity/NaN.
+        const invalidTiming = !Number.isFinite(result.timeMs) || result.timeMs <= 0 ||
+            !Number.isFinite(totalOps) || totalOps <= 0;
         if (type === 'branch' || type === 'branch_predictable') {
             // Branch metric is latency (ns/op) — lower is better.
             // Use result.score so the scheduler picks it up separately from gflops.
-            result.score = totalOps > 0 ? (result.timeMs * 1_000_000) / totalOps : 0;
+            result.score = invalidTiming ? 0 : (result.timeMs * 1_000_000) / totalOps;
             result.unit = 'ns/op';
         } else if (type === 'compress' || type === 'decompress') {
             // Compression card is labeled MB/s, so report MB/s directly.
-            result.score = (totalOps / (result.timeMs / 1000)) / 1e6;
+            // decompressIters=1000 kept capped so per-pass output * iters stays
+            // well under the Rust 256MiB overflow guard.
+            result.score = invalidTiming ? 0 : (totalOps / (result.timeMs / 1000)) / 1e6;
             result.unit = 'MB/s';
         } else if (type === 'int' || type === 'clock') {
-            result.score = (totalOps / (result.timeMs / 1000)) / 1e9;
+            result.score = invalidTiming ? 0 : (totalOps / (result.timeMs / 1000)) / 1e9;
             result.unit = 'GOPS';
         } else {
-            result.gflops = (totalOps / (result.timeMs / 1000)) / 1e9;
+            result.gflops = invalidTiming ? 0 : (totalOps / (result.timeMs / 1000)) / 1e9;
             result.unit = 'GFLOPS';
         }
 

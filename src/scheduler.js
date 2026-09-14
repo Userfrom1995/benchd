@@ -10,8 +10,31 @@ const workers = {
 };
 
 let isRunning = false;
-let testDurationMs = 2000; // 2 seconds per test
+// Shortened runtime: 1s per test (3 windows) keeps the full suite snappy
+// while still giving stable peak/sustained estimates.
+let testDurationMs = 1000; // 1 second per test
 let initPromise = null;
+let abortFlag = false;
+
+// Lower-is-better latency metrics (ns/op). Peak = min window for these,
+// max window for throughput metrics.
+const LOWER_BETTER = new Set(['branch', 'branch_predictable', 'cache_l1', 'cache_l2', 'cache_l3', 'cache_ram']);
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// Total progress steps: 15 benchmark categories + 1 clock card
+// (+1 multicore card when cores > 1). Dashboard progress uses this.
+export function EXPECTED_STEPS(cores) {
+    return 15 + 1 + (cores > 1 ? 1 : 0);
+}
+
+export function cancelBenchmark() {
+    abortFlag = true;
+}
+
+function throwIfAborted() {
+    if (abortFlag) throw new Error('cancelled');
+}
 
 const events = new EventTarget();
 
@@ -176,12 +199,14 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
     events.dispatchEvent(new CustomEvent('progress', { detail: { name: title } }));
 
     try {
-        const NUM_WINDOWS = 4;
+        // 3 windows of ~333ms each (testDurationMs=1000). Keeps total runtime
+        // short while still separating burst (peak) from steady-state (sustained).
+        const NUM_WINDOWS = 3;
         const windowMs = testDurationMs / NUM_WINDOWS;
 
-        // 1. Warm-up
-        if (isMulti) await Promise.all(workerPool.map(w => runWorkerTask(w, type, 500)));
-        else await runWorkerTask(workerPool[0], type, 500);
+        // 1. Warm-up (short 200ms burst to trigger JIT/turbo, untimed)
+        if (isMulti) await Promise.all(workerPool.map(w => runWorkerTask(w, type, 200)));
+        else await runWorkerTask(workerPool[0], type, 200);
 
         // 2. Multi-window scoring: run NUM_WINDOWS back-to-back timed passes.
         //    Peak  = best single window (burst / turbo performance).
@@ -192,17 +217,17 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
             let windowScore;
             if (isMulti) {
                 const res = await Promise.all(workerPool.map(worker => runWorkerTask(worker, type, windowMs)));
-                windowScore = res.reduce((sum, r) => sum + (r.gflops || r.score || 0), 0);
+                windowScore = res.reduce((sum, r) => sum + (r.gflops ?? r.score ?? 0), 0);
                 windows.push(res);
             } else {
                 const res = await runWorkerTask(workerPool[0], type, windowMs);
-                windowScore = res.gflops || res.score || 0;
+                windowScore = res.gflops ?? res.score ?? 0;
                 windows.push(res);
             }
             windowScores.push(windowScore);
         }
 
-        const isLatencyMetric = type === 'branch' || type === 'branch_predictable' || type.startsWith('cache_');
+        const isLatencyMetric = LOWER_BETTER.has(type);
         const peak = isLatencyMetric ? Math.min(...windowScores) : Math.max(...windowScores);
         const sustained = windowScores.reduce((a, b) => a + b, 0) / windowScores.length;
 
@@ -223,8 +248,9 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
 }
 
 export async function runBenchmark(cores) {
-    if (isRunning) return null;
+    if (isRunning) throw new Error('already-running');
     isRunning = true;
+    abortFlag = false;
     const results = {};
 
     try {
@@ -233,7 +259,7 @@ export async function runBenchmark(cores) {
         const captureClockProbe = async (durationMs = 300) => {
             try {
                 const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
-                const value = res.gflops || res.score || 0;
+                const value = res.gflops ?? res.score ?? 0;
                 if (value > clockPeak) clockPeak = value;
                 clockProbes.push({ durationMs, value, raw: res });
             } catch (err) {
@@ -242,50 +268,85 @@ export async function runBenchmark(cores) {
         };
 
         // Probe from start and keep tracking through the run.
-        await captureClockProbe(400);
+        // 5 equal 300ms probes spread across the run.
+        await captureClockProbe(300);
+        throwIfAborted();
 
         results.fp32 = await runCategory('fp32', 'FP32 Compute', workers.compute, 'fp32');
+        throwIfAborted();
         results.fp64 = await runCategory('fp64', 'FP64 Compute', workers.compute, 'fp64');
-        results.integer = await runCategory('int', 'Integer Compute', workers.compute, 'int');
+        throwIfAborted();
+        results.int = await runCategory('int', 'Integer Compute', workers.compute, 'int');
+        throwIfAborted();
         results.simd = await runCategory('simd', 'SIMD Compute', workers.compute, 'simd');
+        throwIfAborted();
         await captureClockProbe();
+        throwIfAborted();
 
         results.membw = await runCategory('membw', 'WASM Memory Bandwidth', [workers.memory], 'membw');
+        throwIfAborted();
         results.cache_l1 = await runCategory('cache_l1', '32KB Random Walk', [workers.memory], 'cache_l1');
+        throwIfAborted();
         results.cache_l2 = await runCategory('cache_l2', '256KB Random Walk', [workers.memory], 'cache_l2');
+        throwIfAborted();
         results.cache_l3 = await runCategory('cache_l3', '8MB Random Walk', [workers.memory], 'cache_l3');
+        throwIfAborted();
         results.cache_ram = await runCategory('cache_ram', '64MB Random Walk', [workers.memory], 'cache_ram');
+        throwIfAborted();
         await captureClockProbe();
+        throwIfAborted();
 
         results.branch_p = await runCategory('branch_p', 'Predictable Branch', [workers.compute[0]], 'branch_predictable');
+        throwIfAborted();
         results.branch_r = await runCategory('branch_r', 'Random Branch', [workers.compute[0]], 'branch');
+        throwIfAborted();
         await captureClockProbe();
+        throwIfAborted();
 
         results.crypto_aes = await runCategory('crypto_aes', 'AES-GCM', [workers.crypto], 'aes');
+        throwIfAborted();
         results.crypto_sha = await runCategory('crypto_sha', 'SHA-256', [workers.crypto], 'sha256');
+        throwIfAborted();
 
         // New Compression Tests
         results.compress = await runCategory('compress', 'LZ77 Compression', [workers.compute[0]], 'compress');
+        throwIfAborted();
         results.decompress = await runCategory('decompress', 'LZ77 Decompression', [workers.compute[0]], 'decompress');
-        await captureClockProbe(500);
+        throwIfAborted();
+        await captureClockProbe(300);
+        throwIfAborted();
 
-        // Report the max observed loop throughput at the end of the full benchmark run.
+        // Report loop throughput at the end of the full benchmark run.
+        // peak = max probe (burst), sustained = mean of the 5 equal probes,
+        // min = slowest probe (thermal floor).
         events.dispatchEvent(new CustomEvent('progress', { detail: { name: 'WASM Loop Throughput' } }));
+        const clockSamples = clockProbes.map(probe => probe.value);
+        const clockMean = clockSamples.length
+            ? clockSamples.reduce((a, b) => a + b, 0) / clockSamples.length
+            : 0;
+        const clockMin = clockSamples.length ? Math.min(...clockSamples) : 0;
         results.clock = {
             peak: clockPeak,
-            sustained: clockPeak,
-            samples: clockProbes.map(probe => probe.value),
+            sustained: clockMean,
+            min: clockMin,
+            max: clockPeak,
+            samples: clockSamples,
             probes: clockProbes
         };
         events.dispatchEvent(new CustomEvent('result', {
-            detail: { categoryId: 'clock', peak: clockPeak, sustained: clockPeak, samples: results.clock.samples }
+            detail: { categoryId: 'clock', peak: clockPeak, sustained: clockMean, samples: results.clock.samples }
         }));
 
         if (cores > 1) {
             const mcResult = await runCategory('multicore', 'Multi-core Scaling', workers.compute, 'fp32', true, false);
+            throwIfAborted();
             if (!mcResult.failed) {
-                const theoreticalMax = (results.fp32.peak || 0) * cores;
-                const efficiency = theoreticalMax > 0 ? (mcResult.peak / theoreticalMax) * 100 : 0;
+                // Re-baselined on sustained single-core throughput (steady-state),
+                // not burst peak, then clamped to [0,100].
+                const base = results.fp32.sustained || results.fp32.peak || 0;
+                const theoreticalMax = base * cores;
+                const rawEfficiency = theoreticalMax > 0 ? (mcResult.peak / theoreticalMax) * 100 : 0;
+                const efficiency = clamp(rawEfficiency, 0, 100);
                 events.dispatchEvent(new CustomEvent('result', {
                     detail: {
                         categoryId: 'multicore',
@@ -296,11 +357,12 @@ export async function runBenchmark(cores) {
                     }
                 }));
                 results.multicore = {
-                    aggregate: mcResult.peak,
+                    peak: mcResult.peak,
                     sustained: mcResult.sustained,
                     efficiency,
                     samples: mcResult.samples,
-                    windows: mcResult.windows
+                    windows: mcResult.windows,
+                    aggregate: mcResult.peak
                 };
             }
         }

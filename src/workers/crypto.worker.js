@@ -10,20 +10,37 @@ self.onmessage = async (e) => {
     let result = { id, type: 'result', timeMs: 0, score: 0 };
 
     try {
-        const start = performance.now();
-        let now = start;
-
+        // Pre-warm (untimed): hoist data alloc + key generation BEFORE start
+        // so the timed per-window loop measures only steady-state crypto
+        // throughput, not allocator / keygen / first-compile cost.
+        let aesData = null;
+        let aesKey = null;
+        let shaData = null;
         if (type === 'aes') {
             // 256KB payload keeps per-call latency moderate while remaining compute-heavy.
-            const data = new Uint8Array(256 * 1024);
-            crypto.getRandomValues(data.subarray(0, 32));
-
+            aesData = new Uint8Array(256 * 1024);
+            crypto.getRandomValues(aesData.subarray(0, 32));
             // Setup key & IV
-            const key = await crypto.subtle.generateKey(
+            aesKey = await crypto.subtle.generateKey(
                 { name: 'AES-GCM', length: 256 },
                 true,
                 ['encrypt', 'decrypt']
             );
+        } else if (type === 'sha256') {
+            // 64-byte payload: matches the standard MH/s benchmark convention.
+            // Small enough that per-hash API overhead is amortised across many
+            // batched calls, while still exercising hardware SHA acceleration.
+            shaData = new Uint8Array(64);
+            crypto.getRandomValues(shaData); // fill entire buffer
+        }
+
+        // Timed section starts here — per-window loop only.
+        let start = performance.now();
+        let now = start;
+
+        if (type === 'aes') {
+            const data = aesData;
+            const key = aesKey;
             let totalBytes = 0;
             while (now - start < durationMs) {
                 // Fresh nonce per encryption is required for AES-GCM correctness.
@@ -38,14 +55,15 @@ self.onmessage = async (e) => {
             }
 
             result.timeMs = now - start;
-            result.score = (totalBytes / (result.timeMs / 1000)) / 1e9; // GB/s
+            // Timing hygiene: NaN/zero guard — never propagate Infinity/NaN.
+            if (!Number.isFinite(result.timeMs) || result.timeMs <= 0 || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+                result.score = 0;
+            } else {
+                result.score = (totalBytes / (result.timeMs / 1000)) / 1e9; // GB/s
+            }
         }
         else if (type === 'sha256') {
-            // 64-byte payload: matches the standard MH/s benchmark convention.
-            // Small enough that per-hash API overhead is amortised across many
-            // batched calls, while still exercising hardware SHA acceleration.
-            const data = new Uint8Array(64);
-            crypto.getRandomValues(data); // fill entire buffer
+            const data = shaData;
 
             let totalHashes = 0;
             while (now - start < durationMs) {
@@ -67,7 +85,12 @@ self.onmessage = async (e) => {
             }
 
             result.timeMs = now - start;
-            result.score = totalHashes / (result.timeMs / 1000) / 1e6; // MH/s (Millions of Hashes per sec)
+            // Timing hygiene: NaN/zero guard — never propagate Infinity/NaN.
+            if (!Number.isFinite(result.timeMs) || result.timeMs <= 0 || !Number.isFinite(totalHashes) || totalHashes <= 0) {
+                result.score = 0;
+            } else {
+                result.score = totalHashes / (result.timeMs / 1000) / 1e6; // MH/s (Millions of Hashes per sec)
+            }
         }
 
         postMessage(result);
