@@ -304,7 +304,7 @@ body::before {
 /* ── Category cards grid ───────────────────────────────────────────── */
 .categories {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 1rem;
     margin-top: 2rem;
 }
@@ -320,6 +320,11 @@ body::before {
 .card:hover {
     border-color: var(--border-bright);
     transform: translateY(-2px);
+}
+
+.card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 24px var(--accent-glow);
 }
 
 .card__header {
@@ -389,6 +394,87 @@ body::before {
 
 .metric__value.error {
     color: var(--accent-error);
+}
+
+.card__note {
+    margin-top: 0.6rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.score-hero__clock.active {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 6px;
+}
+
+#score-badge {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.15rem 0.7rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border-radius: 100px;
+    border: 1px solid var(--border-bright);
+    color: var(--text-muted);
+}
+
+#score-badge[hidden] {
+    display: none;
+}
+
+#score-badge.complete {
+    color: #06130d;
+    background: var(--accent-2);
+    border-color: var(--accent-2);
+}
+
+#score-badge.partial {
+    color: #1a1206;
+    background: var(--accent-warn);
+    border-color: var(--accent-warn);
+}
+
+#run-hint {
+    margin: 0.4rem 0 0.6rem;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--accent-warn);
+}
+
+#run-hint[hidden] {
+    display: none;
+}
+
+/* ── History ─────────────────────────────────────────────────────── */
+.history {
+    max-width: 800px;
+    margin: 3rem auto 0;
+    padding: 1.5rem 2rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.history__title {
+    font-size: 1.1rem;
+    font-weight: 800;
+    margin-bottom: 0.75rem;
+    color: #fff;
+}
+
+#history-list {
+    margin: 0 0 1rem 1.25rem;
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+}
+
+#history-list li {
+    margin-bottom: 0.3rem;
 }
 
 /* ── Methodology ─────────────────────────────────────────────────── */
@@ -464,6 +550,22 @@ body::before {
     font-style: italic;
 }
 
+.methodology__details {
+    margin-bottom: 1rem;
+}
+
+.methodology__details summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--accent-2);
+    margin-bottom: 1rem;
+}
+
+.methodology__details .methodology__grid {
+    margin-bottom: 1.5rem;
+}
+
 /* ── Footer ────────────────────────────────────────────────────────── */
 .footer {
     text-align: center;
@@ -489,5 +591,23 @@ body::before {
 
     .card__metrics {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+
+    .score-hero__value.running {
+        color: #fff;
+    }
+
+    .progress-fill {
+        transition: none;
     }
 }

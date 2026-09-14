@@ -83,6 +83,20 @@ sustained is the mean across all windows (steady-state). For comparisons,
 close background tabs, use the same browser/version/device, and repeat 3×,
 comparing medians rather than single runs.
 
+### UX Notes
+
+- **Progress shows step count + ETA:** each stage reports `Testing {name}…
+  (i/N · ETA ~Xs)` with `aria-valuenow` kept in sync, and the active card is
+  highlighted while it runs.
+- **Keep the tab focused:** a hint under the progress bar reminds you that
+  background tabs throttle timers and skew results.
+- **History is local-only:** the last 20 runs (date, score, complete/partial,
+  Δ vs last run and vs median of the previous 3) are stored in
+  `localStorage` (`benchd.history.v1`) and never leave your browser. Use
+  Clear to wipe them.
+- **Reduced motion respected:** `prefers-reduced-motion` disables the score
+  animation, card transitions, and progress animation.
+
 ## Build Notes
 
 - `wasm/pkg` should be committed for deployment.

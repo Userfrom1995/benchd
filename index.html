@@ -13,6 +13,11 @@
   <meta property="og:description"
     content="Benchmark your CPU directly in the browser. No installs. Runs on any device." />
   <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://userfrom1995.github.io/benchd/" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="color-scheme" content="dark light" />
+  <link rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236c63ff'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='18' font-weight='900' fill='white' text-anchor='middle'%3EB%3C/text%3E%3C/svg%3E" />
 
   <link rel="stylesheet" href="./assets/style.css" />
 </head>
@@ -40,11 +45,13 @@
       <div class="score-hero__label">Overall Score</div>
       <div class="score-hero__value" id="score-value" aria-live="polite">—</div>
       <div class="score-hero__browser" id="browser-info"></div>
+      <span id="score-badge" hidden></span>
       <div class="score-hero__clock" id="clock-speed-hero">Ready to Benchmark</div>
 
       <!-- Progress -->
       <div class="progress-wrap" id="progress-wrap">
         <div class="progress-label" id="progress-label" aria-live="polite">Starting…</div>
+        <div id="run-hint" hidden>Keep this tab focused — background tabs throttle results</div>
         <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-fill" id="progress-fill"></div>
         </div>
@@ -68,7 +75,7 @@
       <div class="card" id="card-fp32">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">⚡</span>
-          <span class="card__title">FP32 Compute</span>
+          <span class="card__title" title="8 independent multiply-add streams">FP32 Compute</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -88,7 +95,7 @@
       <div class="card" id="card-fp64">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🔬</span>
-          <span class="card__title">FP64 Compute</span>
+          <span class="card__title" title="8 independent multiply-add streams">FP64 Compute</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -108,7 +115,7 @@
       <div class="card" id="card-simd">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🧮</span>
-          <span class="card__title">SIMD (Vectorized)</span>
+          <span class="card__title" title="Explicit f32x4 vector throughput">SIMD (Vectorized)</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -128,7 +135,7 @@
       <div class="card" id="card-integer">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🔢</span>
-          <span class="card__title">Integer Compute</span>
+          <span class="card__title" title="u64 wrapping multiply-add throughput">Integer Compute</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -148,7 +155,7 @@
       <div class="card" id="card-membw">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">📡</span>
-          <span class="card__title">WASM Memory Bandwidth</span>
+          <span class="card__title" title="128MB internal WASM buffer throughput">WASM Memory Bandwidth</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -168,7 +175,7 @@
       <div class="card" id="card-cache">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🗃️</span>
-          <span class="card__title">Random Walk Latency</span>
+          <span class="card__title" title="Pointer-chase latency, lower is better">Random Walk Latency</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -192,13 +199,14 @@
             <span class="metric__unit">ns</span>
           </div>
         </div>
+        <div class="card__note">lower is better</div>
       </div>
 
       <!-- Multi-core -->
       <div class="card" id="card-multicore">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🔀</span>
-          <span class="card__title">Multi-core</span>
+          <span class="card__title" title="All-core vs single-core sustained throughput">Multi-core</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -218,7 +226,7 @@
       <div class="card" id="card-branch">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🌿</span>
-          <span class="card__title">Branch Prediction</span>
+          <span class="card__title" title="ns per op, lower is better">Branch Prediction</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -232,13 +240,14 @@
             <span class="metric__unit">ns</span>
           </div>
         </div>
+        <div class="card__note">lower is better</div>
       </div>
 
       <!-- Cryptography -->
       <div class="card" id="card-crypto">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">🔐</span>
-          <span class="card__title">Cryptography</span>
+          <span class="card__title" title="WebCrypto throughput">Cryptography</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -258,7 +267,7 @@
       <div class="card" id="card-compress">
         <div class="card__header">
           <span class="card__icon" aria-hidden="true">📦</span>
-          <span class="card__title">Compression</span>
+          <span class="card__title" title="LZ77-style throughput in MB/s">Compression</span>
         </div>
         <div class="card__metrics">
           <div class="metric">
@@ -276,6 +285,13 @@
 
     </section><!-- /.categories -->
 
+    <!-- History (local only) -->
+    <section class="history" id="history" aria-label="Benchmark history">
+      <h2 class="history__title">History (local only)</h2>
+      <ol id="history-list"></ol>
+      <button class="btn-export" id="btn-clear-history" type="button">Clear</button>
+    </section>
+
     <!-- Methodology -->
     <section class="methodology" id="methodology">
       <h2 class="methodology__title">How it works</h2>
@@ -284,7 +300,9 @@
         The final score is a weighted average of individual tests, scaled using <code>log1p(x)</code> to reward
         performance gains while preventing numerical explosion.
       </p>
-      <div class="methodology__grid">
+      <details class="methodology__details">
+        <summary>Scoring details</summary>
+        <div class="methodology__grid">
         <div class="methodology__item"><strong>FP32/64</strong>: 30% (Floating Point math)</div>
         <div class="methodology__item"><strong>SIMD/Int</strong>: 20% (Vectorization & Logic)</div>
         <div class="methodology__item"><strong>Memory</strong>: 20% (WASM memory throughput)</div>
@@ -295,6 +313,7 @@
       <p class="methodology__note">
         *If a test fails on your hardware, its weight is automatically redistributed to ensure a fair overall score.
       </p>
+      </details>
     </section>
 
     <!-- Footer -->
