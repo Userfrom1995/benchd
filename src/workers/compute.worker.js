@@ -31,7 +31,7 @@ self.onmessage = async (e) => {
     }
 
     try {
-        let result = { id, type: 'result', ops: 0, timeMs: 0, gflops: 0 };
+        let result = { id, type: 'result', ops: 0, timeMs: 0 };
 
         // We calibrate dynamic iterations so it runs for roughly the requested duration
         // The WASM kernel calls are fast enough that we can loop them in JS and check the clock periodically

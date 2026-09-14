@@ -217,11 +217,11 @@ async function runCategory(categoryId, title, workerPool, type, isMulti = false,
             let windowScore;
             if (isMulti) {
                 const res = await Promise.all(workerPool.map(worker => runWorkerTask(worker, type, windowMs)));
-                windowScore = res.reduce((sum, r) => sum + (r.gflops ?? r.score ?? 0), 0);
+                windowScore = res.reduce((sum, r) => sum + (r.gflops || r.score || 0), 0);
                 windows.push(res);
             } else {
                 const res = await runWorkerTask(workerPool[0], type, windowMs);
-                windowScore = res.gflops ?? res.score ?? 0;
+                windowScore = res.gflops || res.score || 0;
                 windows.push(res);
             }
             windowScores.push(windowScore);
@@ -259,7 +259,7 @@ export async function runBenchmark(cores) {
         const captureClockProbe = async (durationMs = 300) => {
             try {
                 const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
-                const value = res.gflops ?? res.score ?? 0;
+                const value = res.gflops || res.score || 0;
                 if (value > clockPeak) clockPeak = value;
                 clockProbes.push({ durationMs, value, raw: res });
             } catch (err) {
