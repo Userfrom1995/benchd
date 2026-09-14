@@ -1,6 +1,9 @@
 import init, {
     bench_wasm_memory_bandwidth,
-    bench_cache_latency
+    bench_cache_latency,
+    reset_memory_bandwidth,
+    init_cache_buffer,
+    bench_cache_latency_persistent
 } from '../../wasm/pkg/benchd_wasm.js';
 
 let wasmReady = false;
@@ -23,7 +26,7 @@ self.onmessage = async (e) => {
             return;
         }
         let result = { id, type: 'result', timeMs: 0, score: 0 };
-        const start = performance.now();
+        let start = performance.now();
         let now = start;
 
         if (type === 'membw') {
@@ -31,6 +34,14 @@ self.onmessage = async (e) => {
             let totalBytes = 0;
             const elements = 1024 * 1024 * 16; // 128MB of f64 values inside WASM memory.
             const bytesPerPass = elements * Float64Array.BYTES_PER_ELEMENT * 2;
+
+            // Pre-warm (untimed): allocate + fill once so the timed loop measures
+            // steady-state bandwidth, not allocator/zeroing cost.
+            if (typeof reset_memory_bandwidth === 'function') {
+                reset_memory_bandwidth(elements);
+                start = performance.now();
+                now = start;
+            }
 
             while (now - start < durationMs) {
                 bench_wasm_memory_bandwidth(elements);
@@ -53,25 +64,42 @@ self.onmessage = async (e) => {
             else sizeBytes = 64 * 1024 * 1024;
 
             const len = sizeBytes / 4;
-            const buf = new Uint32Array(len);
-            const indices = Array.from({ length: len }, (_, i) => i);
-
-            // Fisher-Yates shuffle for true random walk (defeats prefetcher)
-            for (let i = len - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [indices[i], indices[j]] = [indices[j], indices[i]];
-            }
-            for (let i = 0; i < len - 1; i++) {
-                buf[indices[i]] = indices[i + 1];
-            }
-            buf[indices[len - 1]] = indices[0];
-
-            let passes = 0;
             const accessesPerPass = 2_000_000;
-            while (now - start < durationMs) {
-                bench_cache_latency(buf, accessesPerPass);
-                passes++;
-                now = performance.now();
+            let passes = 0;
+
+            const usePersistent = (typeof init_cache_buffer === 'function' &&
+                typeof bench_cache_latency_persistent === 'function');
+            if (usePersistent) {
+                // Init once (untimed) inside WASM; time only the persistent chase.
+                // u64 seed => pass BigInt for wasm-bindgen.
+                const seed = BigInt((sizeBytes ^ 0x9E3779B9) >>> 0);
+                init_cache_buffer(sizeBytes, seed);
+                start = performance.now();
+                now = start;
+                while (now - start < durationMs) {
+                    bench_cache_latency_persistent(accessesPerPass);
+                    passes++;
+                    now = performance.now();
+                }
+            } else {
+                const buf = new Uint32Array(len);
+                const indices = Array.from({ length: len }, (_, i) => i);
+
+                // Fisher-Yates shuffle for true random walk (defeats prefetcher)
+                for (let i = len - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [indices[i], indices[j]] = [indices[j], indices[i]];
+                }
+                for (let i = 0; i < len - 1; i++) {
+                    buf[indices[i]] = indices[i + 1];
+                }
+                buf[indices[len - 1]] = indices[0];
+
+                while (now - start < durationMs) {
+                    bench_cache_latency(buf, accessesPerPass);
+                    passes++;
+                    now = performance.now();
+                }
             }
 
             result.timeMs = now - start;

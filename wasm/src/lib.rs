@@ -5,6 +5,21 @@ use wasm_bindgen::prelude::*;
 
 thread_local! {
     static MEMORY_BANDWIDTH_BUF: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+    static CACHE_BUF: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
+    static BRANCH_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+#[inline(always)]
+fn xorshift64_next(state: &mut u64) -> u64 {
+    let mut x = *state;
+    if x == 0 {
+        x = 0x9E3779B97F4A7C15;
+    }
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *state = x;
+    x
 }
 
 // ── 1. Floating Point 32 (Single Precision) ────────────
@@ -209,6 +224,12 @@ unsafe fn bench_simd128(iterations: u32, start_a: f32, b_val: f32, c_val: f32) -
 
 // ── 5. Memory Bandwidth ────────────
 
+/// True when the WASM binary was built with SIMD128 enabled.
+#[wasm_bindgen]
+pub fn simd_is_hardware() -> bool {
+    cfg!(target_feature = "simd128")
+}
+
 #[wasm_bindgen]
 #[inline(never)]
 pub fn bench_memory_bandwidth(data: &mut [f64]) -> f64 {
@@ -249,6 +270,16 @@ pub fn bench_wasm_memory_bandwidth(elements: usize) -> f64 {
     })
 }
 
+#[wasm_bindgen]
+#[inline(never)]
+pub fn reset_memory_bandwidth(elements: usize) {
+    MEMORY_BANDWIDTH_BUF.with(|cell| {
+        let mut data = cell.borrow_mut();
+        data.resize(elements, 1.0);
+        data.fill(1.0);
+    })
+}
+
 // ── 6. Cache Latency ────────────
 
 /// Pointer chasing through an array to measure latency
@@ -268,6 +299,9 @@ pub fn bench_cache_latency(data: &[u32], iterations: u32) -> u32 {
         curr = data[curr] as usize;
         curr = data[curr] as usize;
         curr = data[curr] as usize;
+        curr = data[curr] as usize;
+    }
+    for _ in 0..(iterations % 4) {
         curr = data[curr] as usize;
     }
 
@@ -301,6 +335,73 @@ pub fn generate_random_pointer_array(size: usize) -> Vec<u32> {
     result
 }
 
+/// Pre-generate a pointer-chasing buffer inside WASM (no JS->WASM copy in timed path).
+/// Uses a simple xorshift(seed) Fisher-Yates shuffle so the timed path has no `rand` dependency.
+/// `bytes` is the desired buffer size in bytes; stored length is `bytes / 4` u32 entries.
+/// Returns the stored length.
+#[wasm_bindgen]
+#[inline(never)]
+pub fn init_cache_buffer(bytes: usize, seed: u64) -> usize {
+    let len = bytes / 4;
+    if len == 0 {
+        CACHE_BUF.with(|cell| cell.borrow_mut().clear());
+        return 0;
+    }
+
+    let mut indices: Vec<u32> = (0..len as u32).collect();
+    let mut state = seed.wrapping_add(0x9E3779B97F4A7C15);
+    if state == 0 {
+        state = 0x6A09E667F3BCC909;
+    }
+    for i in (1..len).rev() {
+        let r = xorshift64_next(&mut state);
+        let j = (r as usize) % (i + 1);
+        indices.swap(i, j);
+    }
+
+    let mut result = vec![0u32; len];
+    for i in 0..len - 1 {
+        result[indices[i] as usize] = indices[i + 1];
+    }
+    result[indices[len - 1] as usize] = indices[0];
+
+    CACHE_BUF.with(|cell| {
+        *cell.borrow_mut() = result;
+    });
+    len
+}
+
+/// Pointer-chase the persistent [`CACHE_BUF`] without any slice copy overhead.
+#[wasm_bindgen]
+#[inline(never)]
+pub fn bench_cache_latency_persistent(iterations: u32) -> u32 {
+    CACHE_BUF.with(|cell| {
+        let data = cell.borrow();
+        if data.is_empty() || iterations == 0 {
+            return 0;
+        }
+        let mut curr: usize = 0;
+        for _ in 0..(iterations / 4) {
+            // SAFETY: `curr` is always a valid index because the buffer holds a
+            // permutation cycle of 0..len (every entry points inside the buffer),
+            // and we checked the buffer is non-empty so index 0 is valid to start.
+            unsafe {
+                curr = *data.get_unchecked(curr) as usize;
+                curr = *data.get_unchecked(curr) as usize;
+                curr = *data.get_unchecked(curr) as usize;
+                curr = *data.get_unchecked(curr) as usize;
+            }
+        }
+        for _ in 0..(iterations % 4) {
+            // SAFETY: same invariant as above.
+            unsafe {
+                curr = *data.get_unchecked(curr) as usize;
+            }
+        }
+        curr as u32
+    })
+}
+
 // ── 7. Branch Prediction ────────────
 
 /// Measures the cost of predictable vs unpredictable branches.
@@ -323,6 +424,7 @@ pub fn bench_branch_predict(data: &[u8], iterations: u32) -> u32 {
     let mut b: u32 = 1;
     let len = data.len();
     let outer = iterations / len as u32;
+    let rem = iterations % len as u32;
 
     for _ in 0..outer {
         for i in 0..len {
@@ -333,8 +435,78 @@ pub fn bench_branch_predict(data: &[u8], iterations: u32) -> u32 {
             }
         }
     }
+    for i in 0..rem as usize {
+        if data[i] > 127 {
+            a = a.wrapping_add(b);
+        } else {
+            b = b.wrapping_add(a);
+        }
+    }
 
     a ^ b
+}
+
+/// Pre-generate a branch-prediction buffer inside WASM (no JS->WASM copy in timed path).
+/// mode 0 = pseudo-random bytes via xorshift, mode 1 = all 255 (always-taken).
+/// Returns the stored length.
+#[wasm_bindgen]
+#[inline(never)]
+pub fn init_branch_buffer(size: usize, mode: u8) -> usize {
+    BRANCH_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if mode == 1 {
+            buf.resize(size, 255);
+            buf.fill(255);
+        } else {
+            buf.resize(size, 0);
+            let mut state: u64 = 0x9E3779B97F4A7C15u64
+                ^ ((size as u64).wrapping_mul(0xBF58476D1CE4E5B9));
+            if state == 0 {
+                state = 0x6A09E667F3BCC909;
+            }
+            for b in buf.iter_mut() {
+                let r = xorshift64_next(&mut state);
+                *b = (r >> 33) as u8;
+            }
+        }
+        buf.len()
+    })
+}
+
+/// Branch benchmark over the persistent [`BRANCH_BUF`] without copy overhead.
+#[wasm_bindgen]
+#[inline(never)]
+pub fn bench_branch_persistent(iterations: u32) -> u32 {
+    BRANCH_BUF.with(|cell| {
+        let data = cell.borrow();
+        if data.is_empty() || iterations == 0 {
+            return 0;
+        }
+        let mut a: u32 = 1;
+        let mut b: u32 = 1;
+        let len = data.len();
+        let outer = iterations as usize / len;
+        let rem = iterations as usize % len;
+
+        for _ in 0..outer {
+            for i in 0..len {
+                if data[i] > 127 {
+                    a = a.wrapping_add(b);
+                } else {
+                    b = b.wrapping_add(a);
+                }
+            }
+        }
+        for i in 0..rem {
+            if data[i] > 127 {
+                a = a.wrapping_add(b);
+            } else {
+                b = b.wrapping_add(a);
+            }
+        }
+
+        a ^ b
+    })
 }
 
 // ── 8. WASM Loop Throughput ────────────
@@ -351,9 +523,8 @@ pub fn bench_clock(iterations: u32, seed: u32) -> u32 {
 
     let mut a: u32 = seed | 1;
     for _ in 0..iterations {
-        a = a.wrapping_add(1);
-        // Prevent algebraic simplification of the full loop into a constant-time expression.
-        black_box(a);
+        // Feed back through black_box so LLVM cannot fold the loop into `seed + iterations`.
+        a = black_box(a.wrapping_add(1));
     }
     a
 }
@@ -434,13 +605,17 @@ pub fn bench_decompress(compressed_commands: &[u32], iterations: u32) -> u32 {
     let mut per_pass_out: usize = 0;
     for &cmd in compressed_commands {
         if cmd & 0x8000_0000 == 0 {
-            per_pass_out += 1;
+            per_pass_out = per_pass_out.saturating_add(1);
         } else {
-            per_pass_out += ((cmd >> 16) & 0x7FFF) as usize;
+            per_pass_out =
+                per_pass_out.saturating_add(((cmd >> 16) & 0x7FFF) as usize);
         }
     }
 
     if per_pass_out == 0 {
+        return 0;
+    }
+    if per_pass_out > 256 * 1024 * 1024 {
         return 0;
     }
 
@@ -579,5 +754,103 @@ mod tests {
         ];
         let result = bench_decompress(&commands, 10);
         assert!(result > 0);
+    }
+
+    #[test]
+    fn test_simd_auto_determinism() {
+        let r1 = bench_simd_auto(100, 1.0, 0.99999, 0.00001);
+        let r2 = bench_simd_auto(100, 1.0, 0.99999, 0.00001);
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn test_simd_auto_zero_iter() {
+        assert_eq!(bench_simd_auto(0, 1.5, 2.0, 3.0), 1.5);
+    }
+
+    #[test]
+    fn test_cache_remainder() {
+        // Cycle 0 -> 1 -> 2 -> 3 -> 0 ...
+        let data = vec![1u32, 2, 3, 0];
+        assert_eq!(bench_cache_latency(&data, 4), 0);
+        // Without the remainder loop, iters=5 would do only 4 hops and return 0.
+        assert_eq!(bench_cache_latency(&data, 5), 1);
+        assert_eq!(bench_cache_latency(&data, 1), 1);
+    }
+
+    #[test]
+    fn test_cache_persistent_remainder() {
+        let len = init_cache_buffer(16, 0x12345678);
+        assert_eq!(len, 4);
+        // Must not panic and must return a valid index.
+        let r4 = bench_cache_latency_persistent(4);
+        let r5 = bench_cache_latency_persistent(5);
+        assert!(r4 < 4);
+        assert!(r5 < 4);
+        assert_eq!(bench_cache_latency_persistent(0), 0);
+    }
+
+    #[test]
+    fn test_branch_tail_iters_less_than_len() {
+        // len=4, iters=2 < len: old code did zero passes and returned 0.
+        let data = vec![255u8, 255, 255, 255];
+        let r = bench_branch_predict(&data, 2);
+        assert_ne!(r, 0);
+        // Full pass + tail consistency: 6 iters over len 4 = 1 full pass + 2 tail.
+        let r6 = bench_branch_predict(&data, 6);
+        assert_ne!(r6, 0);
+    }
+
+    #[test]
+    fn test_branch_persistent_matches_slice() {
+        let n = init_branch_buffer(16, 1);
+        assert_eq!(n, 16);
+        let data = vec![255u8; 16];
+        assert_eq!(
+            bench_branch_persistent(2),
+            bench_branch_predict(&data, 2)
+        );
+        assert_eq!(
+            bench_branch_persistent(20),
+            bench_branch_predict(&data, 20)
+        );
+        assert_eq!(bench_branch_persistent(0), 0);
+    }
+
+    #[test]
+    fn test_clock_determinism() {
+        let r1 = bench_clock(1000, 42);
+        let r2 = bench_clock(1000, 42);
+        assert_eq!(r1, r2);
+        // seed|1 start + 1000 increments
+        assert_eq!(r1, (42u32 | 1).wrapping_add(1000));
+    }
+
+    #[test]
+    fn test_decompress_overflow_cap() {
+        // Each match contributes 0x7FFF bytes; 9000 * 32767 > 256MiB cap.
+        let cmds = vec![0x80000000u32 | (0x7FFF << 16) | 0; 9000];
+        assert_eq!(bench_decompress(&cmds, 1), 0);
+    }
+
+    #[test]
+    fn test_pointer_array_zero_one() {
+        assert!(generate_random_pointer_array(0).is_empty());
+        let one = generate_random_pointer_array(1);
+        assert_eq!(one, vec![0u32]);
+    }
+
+    #[test]
+    fn test_int_zero_iter() {
+        assert_eq!(bench_int(0, 7, 2, 3), 7);
+    }
+
+    #[test]
+    fn test_membw_reset() {
+        reset_memory_bandwidth(128);
+        let r = bench_wasm_memory_bandwidth(128);
+        assert_eq!(r, 128.0);
+        reset_memory_bandwidth(0);
+        assert_eq!(bench_wasm_memory_bandwidth(0), 0.0);
     }
 }

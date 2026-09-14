@@ -2,6 +2,11 @@
 /* eslint-disable */
 
 /**
+ * Branch benchmark over the persistent [`BRANCH_BUF`] without copy overhead.
+ */
+export function bench_branch_persistent(iterations: number): number;
+
+/**
  * Measures the cost of predictable vs unpredictable branches.
  *
  * Uses two cross-dependent accumulators so the two branch arms update
@@ -18,6 +23,11 @@ export function bench_branch_predict(data: Uint8Array, iterations: number): numb
  * The array should contain randomized indices (a linked list in an array).
  */
 export function bench_cache_latency(data: Uint32Array, iterations: number): number;
+
+/**
+ * Pointer-chase the persistent [`CACHE_BUF`] without any slice copy overhead.
+ */
+export function bench_cache_latency_persistent(iterations: number): number;
 
 /**
  * Tight loop of simple increments. This reports browser/WASM loop throughput,
@@ -66,12 +76,36 @@ export function calibrate_clock(iterations: number): number;
  */
 export function generate_random_pointer_array(size: number): Uint32Array;
 
+/**
+ * Pre-generate a branch-prediction buffer inside WASM (no JS->WASM copy in timed path).
+ * mode 0 = pseudo-random bytes via xorshift, mode 1 = all 255 (always-taken).
+ * Returns the stored length.
+ */
+export function init_branch_buffer(size: number, mode: number): number;
+
+/**
+ * Pre-generate a pointer-chasing buffer inside WASM (no JS->WASM copy in timed path).
+ * Uses a simple xorshift(seed) Fisher-Yates shuffle so the timed path has no `rand` dependency.
+ * `bytes` is the desired buffer size in bytes; stored length is `bytes / 4` u32 entries.
+ * Returns the stored length.
+ */
+export function init_cache_buffer(bytes: number, seed: bigint): number;
+
+export function reset_memory_bandwidth(elements: number): void;
+
+/**
+ * True when the WASM binary was built with SIMD128 enabled.
+ */
+export function simd_is_hardware(): boolean;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly bench_branch_persistent: (a: number) => number;
     readonly bench_branch_predict: (a: number, b: number, c: number) => number;
     readonly bench_cache_latency: (a: number, b: number, c: number) => number;
+    readonly bench_cache_latency_persistent: (a: number) => number;
     readonly bench_clock: (a: number, b: number) => number;
     readonly bench_compress: (a: number, b: number, c: number) => number;
     readonly bench_decompress: (a: number, b: number, c: number) => number;
@@ -83,6 +117,10 @@ export interface InitOutput {
     readonly bench_wasm_memory_bandwidth: (a: number) => number;
     readonly calibrate_clock: (a: number) => number;
     readonly generate_random_pointer_array: (a: number, b: number) => void;
+    readonly init_branch_buffer: (a: number, b: number) => number;
+    readonly init_cache_buffer: (a: number, b: bigint) => number;
+    readonly reset_memory_bandwidth: (a: number) => void;
+    readonly simd_is_hardware: () => number;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_export2: (a: number, b: number) => number;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;

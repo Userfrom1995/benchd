@@ -6,7 +6,10 @@ import init, {
     bench_branch_predict,
     bench_clock,
     bench_compress,
-    bench_decompress
+    bench_decompress,
+    init_branch_buffer,
+    bench_branch_persistent,
+    simd_is_hardware
 } from '../../wasm/pkg/benchd_wasm.js';
 
 let wasmReady = false;
@@ -32,7 +35,7 @@ self.onmessage = async (e) => {
 
         // We calibrate dynamic iterations so it runs for roughly the requested duration
         // The WASM kernel calls are fast enough that we can loop them in JS and check the clock periodically
-        const start = performance.now();
+        let start = performance.now();
         let now = start;
         let totalOps = 0;
 
@@ -40,6 +43,50 @@ self.onmessage = async (e) => {
         const chunkIters = 5_000_000;
         const scalarThroughputOps = chunkIters * 8 * 2;
         const simdThroughputOps = chunkIters * 4 * 4 * 2;
+
+        // Pre-warm persistent branch buffers (untimed) so the timed loop measures
+        // only the branch kernel, not buffer allocation / JS->WASM copy.
+        // Falls back to the old slice API when persistent exports are unavailable.
+        let usePersistentBranch = false;
+        if (type === 'branch' || type === 'branch_predictable') {
+            if (typeof init_branch_buffer === 'function' &&
+                typeof bench_branch_persistent === 'function') {
+                try {
+                    init_branch_buffer(1024 * 1024, type === 'branch_predictable' ? 1 : 0);
+                    usePersistentBranch = true;
+                } catch {
+                    usePersistentBranch = false;
+                }
+            }
+            if (!usePersistentBranch) {
+                if (type === 'branch' && !self.branchData) {
+                    self.branchData = new Uint8Array(1024 * 1024);
+                    // crypto.getRandomValues is limited to 64KB (65536 bytes) per call
+                    const CHUNK_SIZE = 65536;
+                    for (let i = 0; i < self.branchData.length; i += CHUNK_SIZE) {
+                        crypto.getRandomValues(self.branchData.subarray(i, i + CHUNK_SIZE));
+                    }
+                }
+                if (type === 'branch_predictable' && !self.predictableData) {
+                    self.predictableData = new Uint8Array(1024 * 1024);
+                    // Always-taken branch pattern gives the predictor a near-perfect signal.
+                    self.predictableData.fill(255);
+                }
+            }
+            // Exclude pre-warm from timing.
+            start = performance.now();
+            now = start;
+        }
+
+        // Probe SIMD capability once (untimed).
+        let hardwareSimd = null;
+        if (type === 'simd' && typeof simd_is_hardware === 'function') {
+            try {
+                hardwareSimd = simd_is_hardware();
+            } catch {
+                hardwareSimd = false;
+            }
+        }
 
         while (now - start < durationMs) {
             if (type === 'fp32') {
@@ -59,26 +106,21 @@ self.onmessage = async (e) => {
                 totalOps += simdThroughputOps;
             }
             else if (type === 'branch') {
-                if (!self.branchData) {
-                    self.branchData = new Uint8Array(1024 * 1024);
-                    // crypto.getRandomValues is limited to 64KB (65536 bytes) per call
-                    const CHUNK_SIZE = 65536;
-                    for (let i = 0; i < self.branchData.length; i += CHUNK_SIZE) {
-                        crypto.getRandomValues(self.branchData.subarray(i, i + CHUNK_SIZE));
-                    }
-                }
                 const branchIters = Math.max(1024 * 1024, chunkIters / 10);
-                bench_branch_predict(self.branchData, branchIters);
+                if (usePersistentBranch) {
+                    bench_branch_persistent(branchIters);
+                } else {
+                    bench_branch_predict(self.branchData, branchIters);
+                }
                 totalOps += branchIters;
             }
             else if (type === 'branch_predictable') {
-                if (!self.predictableData) {
-                    self.predictableData = new Uint8Array(1024 * 1024);
-                    // Always-taken branch pattern gives the predictor a near-perfect signal.
-                    self.predictableData.fill(255);
-                }
                 const branchIters = Math.max(1024 * 1024, chunkIters / 10);
-                bench_branch_predict(self.predictableData, branchIters);
+                if (usePersistentBranch) {
+                    bench_branch_persistent(branchIters);
+                } else {
+                    bench_branch_predict(self.predictableData, branchIters);
+                }
                 totalOps += branchIters;
             }
             else if (type === 'clock') {
@@ -88,15 +130,16 @@ self.onmessage = async (e) => {
             }
             else if (type === 'compress') {
                 if (!self.compressData) {
-                    // 64KB of repetitive data for LZ77
-                    self.compressData = new Uint8Array(64 * 1024);
+                    // 16KB of repetitive data for LZ77 (smaller window keeps the
+                    // kernel in cache and shortens each pass).
+                    self.compressData = new Uint8Array(16 * 1024);
                     for (let i = 0; i < self.compressData.length; i++) {
                         self.compressData[i] = (i % 256) ^ (i % 7);
                     }
                 }
-                const compressIters = 5; // Compression is heavy, do fewer outer loops
+                const compressIters = 2; // Compression is heavy, do fewer outer loops
                 for (let i = 0; i < compressIters; i++) {
-                    bench_compress(self.compressData, 1024);
+                    bench_compress(self.compressData, 256);
                 }
                 totalOps += self.compressData.length * compressIters;
             }
@@ -142,6 +185,9 @@ self.onmessage = async (e) => {
 
         result.timeMs = now - start;
         result.ops = totalOps;
+        if (type === 'simd' && hardwareSimd !== null) {
+            result.hardwareSimd = hardwareSimd;
+        }
         if (type === 'branch' || type === 'branch_predictable') {
             // Branch metric is latency (ns/op) — lower is better.
             // Use result.score so the scheduler picks it up separately from gflops.

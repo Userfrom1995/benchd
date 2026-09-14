@@ -1,6 +1,16 @@
 /* @ts-self-types="./benchd_wasm.d.ts" */
 
 /**
+ * Branch benchmark over the persistent [`BRANCH_BUF`] without copy overhead.
+ * @param {number} iterations
+ * @returns {number}
+ */
+export function bench_branch_persistent(iterations) {
+    const ret = wasm.bench_branch_persistent(iterations);
+    return ret >>> 0;
+}
+
+/**
  * Measures the cost of predictable vs unpredictable branches.
  *
  * Uses two cross-dependent accumulators so the two branch arms update
@@ -31,6 +41,16 @@ export function bench_cache_latency(data, iterations) {
     const ptr0 = passArray32ToWasm0(data, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.bench_cache_latency(ptr0, len0, iterations);
+    return ret >>> 0;
+}
+
+/**
+ * Pointer-chase the persistent [`CACHE_BUF`] without any slice copy overhead.
+ * @param {number} iterations
+ * @returns {number}
+ */
+export function bench_cache_latency_persistent(iterations) {
+    const ret = wasm.bench_cache_latency_persistent(iterations);
     return ret >>> 0;
 }
 
@@ -174,6 +194,49 @@ export function generate_random_pointer_array(size) {
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }
+}
+
+/**
+ * Pre-generate a branch-prediction buffer inside WASM (no JS->WASM copy in timed path).
+ * mode 0 = pseudo-random bytes via xorshift, mode 1 = all 255 (always-taken).
+ * Returns the stored length.
+ * @param {number} size
+ * @param {number} mode
+ * @returns {number}
+ */
+export function init_branch_buffer(size, mode) {
+    const ret = wasm.init_branch_buffer(size, mode);
+    return ret >>> 0;
+}
+
+/**
+ * Pre-generate a pointer-chasing buffer inside WASM (no JS->WASM copy in timed path).
+ * Uses a simple xorshift(seed) Fisher-Yates shuffle so the timed path has no `rand` dependency.
+ * `bytes` is the desired buffer size in bytes; stored length is `bytes / 4` u32 entries.
+ * Returns the stored length.
+ * @param {number} bytes
+ * @param {bigint} seed
+ * @returns {number}
+ */
+export function init_cache_buffer(bytes, seed) {
+    const ret = wasm.init_cache_buffer(bytes, seed);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} elements
+ */
+export function reset_memory_bandwidth(elements) {
+    wasm.reset_memory_bandwidth(elements);
+}
+
+/**
+ * True when the WASM binary was built with SIMD128 enabled.
+ * @returns {boolean}
+ */
+export function simd_is_hardware() {
+    const ret = wasm.simd_is_hardware();
+    return ret !== 0;
 }
 
 function __wbg_get_imports() {
