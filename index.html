@@ -38,20 +38,23 @@
     <!-- Score Hero -->
     <section class="score-hero" aria-label="Overall score">
       <div class="score-hero__label">Overall Score</div>
-      <div class="score-hero__value" id="score-value">—</div>
+      <div class="score-hero__value" id="score-value" aria-live="polite">—</div>
       <div class="score-hero__browser" id="browser-info"></div>
       <div class="score-hero__clock" id="clock-speed-hero">Ready to Benchmark</div>
 
       <!-- Progress -->
       <div class="progress-wrap" id="progress-wrap">
-        <div class="progress-label" id="progress-label">Starting…</div>
-        <div class="progress-track">
+        <div class="progress-label" id="progress-label" aria-live="polite">Starting…</div>
+        <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-fill" id="progress-fill"></div>
         </div>
       </div>
 
       <button class="btn-start" id="btn-start" type="button">
         ▶ Run Benchmark
+      </button>
+      <button class="btn-export" id="btn-cancel" type="button" disabled>
+        ✕ Cancel
       </button>
       <button class="btn-export" id="btn-export" type="button" disabled>
         Export JSON
@@ -64,7 +67,7 @@
       <!-- FP32 -->
       <div class="card" id="card-fp32">
         <div class="card__header">
-          <span class="card__icon">⚡</span>
+          <span class="card__icon" aria-hidden="true">⚡</span>
           <span class="card__title">FP32 Compute</span>
         </div>
         <div class="card__metrics">
@@ -84,7 +87,7 @@
       <!-- FP64 -->
       <div class="card" id="card-fp64">
         <div class="card__header">
-          <span class="card__icon">🔬</span>
+          <span class="card__icon" aria-hidden="true">🔬</span>
           <span class="card__title">FP64 Compute</span>
         </div>
         <div class="card__metrics">
@@ -104,7 +107,7 @@
       <!-- SIMD -->
       <div class="card" id="card-simd">
         <div class="card__header">
-          <span class="card__icon">🧮</span>
+          <span class="card__icon" aria-hidden="true">🧮</span>
           <span class="card__title">SIMD (Vectorized)</span>
         </div>
         <div class="card__metrics">
@@ -124,7 +127,7 @@
       <!-- Integer -->
       <div class="card" id="card-integer">
         <div class="card__header">
-          <span class="card__icon">🔢</span>
+          <span class="card__icon" aria-hidden="true">🔢</span>
           <span class="card__title">Integer Compute</span>
         </div>
         <div class="card__metrics">
@@ -144,7 +147,7 @@
       <!-- WASM Memory Bandwidth -->
       <div class="card" id="card-membw">
         <div class="card__header">
-          <span class="card__icon">📡</span>
+          <span class="card__icon" aria-hidden="true">📡</span>
           <span class="card__title">WASM Memory Bandwidth</span>
         </div>
         <div class="card__metrics">
@@ -164,7 +167,7 @@
       <!-- Random Walk Latency -->
       <div class="card" id="card-cache">
         <div class="card__header">
-          <span class="card__icon">🗃️</span>
+          <span class="card__icon" aria-hidden="true">🗃️</span>
           <span class="card__title">Random Walk Latency</span>
         </div>
         <div class="card__metrics">
@@ -194,7 +197,7 @@
       <!-- Multi-core -->
       <div class="card" id="card-multicore">
         <div class="card__header">
-          <span class="card__icon">🔀</span>
+          <span class="card__icon" aria-hidden="true">🔀</span>
           <span class="card__title">Multi-core</span>
         </div>
         <div class="card__metrics">
@@ -214,7 +217,7 @@
       <!-- Branch Prediction -->
       <div class="card" id="card-branch">
         <div class="card__header">
-          <span class="card__icon">🌿</span>
+          <span class="card__icon" aria-hidden="true">🌿</span>
           <span class="card__title">Branch Prediction</span>
         </div>
         <div class="card__metrics">
@@ -234,7 +237,7 @@
       <!-- Cryptography -->
       <div class="card" id="card-crypto">
         <div class="card__header">
-          <span class="card__icon">🔐</span>
+          <span class="card__icon" aria-hidden="true">🔐</span>
           <span class="card__title">Cryptography</span>
         </div>
         <div class="card__metrics">
@@ -254,7 +257,7 @@
       <!-- Compression -->
       <div class="card" id="card-compress">
         <div class="card__header">
-          <span class="card__icon">📦</span>
+          <span class="card__icon" aria-hidden="true">📦</span>
           <span class="card__title">Compression</span>
         </div>
         <div class="card__metrics">

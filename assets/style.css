@@ -142,6 +142,25 @@ body::before {
     color: var(--accent-error);
 }
 
+/* Generic status helpers (mirrors #sab-status states for setStatus callers) */
+.status-ok {
+    color: var(--accent-2);
+}
+
+.status-warn {
+    color: var(--accent-warn);
+}
+
+.status-error {
+    color: var(--accent-error);
+}
+
+/* Visible keyboard focus for accessibility */
+:focus-visible {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 2px;
+}
+
 /* ── Score hero ────────────────────────────────────────────────────── */
 .score-hero {
     text-align: center;

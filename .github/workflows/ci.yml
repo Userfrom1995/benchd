@@ -1,0 +1,16 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
+      - run: node --check src/score.js && node --check src/scheduler.js && node --check src/main.js && node --check src/ui/dashboard.js && node --check src/workers/compute.worker.js && node --check src/workers/crypto.worker.js && node --check src/workers/memory.worker.js && node --check sw.js
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path wasm/Cargo.toml

@@ -38,3 +38,7 @@ test.html
 *.swp
 *~
 review/
+.codex
+.codex/
+.specstory
+.specstory/

@@ -68,13 +68,56 @@ npx -y serve . -p 4200 --no-clipboard
 
 Open `http://localhost:4200`.
 
+### Runtime
+
+A full run takes ~17s on a typical desktop:
+
+- 1000ms timed work per test, split into 3 windows (~333ms each) for peak (best window) vs sustained (mean) estimates
+- 200ms untimed warm-up per test to trigger JIT/turbo before measuring
+- 5 × 300ms WASM loop-throughput (clock) probes spread across the run
+- +1 multi-core pass when `hardwareConcurrency > 1`
+
+### Run Variance
+
+Repeat runs vary — this is expected. Turbo boost, thermal throttling,
+background tabs, power profiles, and JIT all shift results by a few percent.
+`sustained < peak` is normal: peak is the best single window (burst),
+sustained is the mean across all windows (steady-state). For comparisons,
+close background tabs, use the same browser/version/device, and repeat 3×,
+comparing medians rather than single runs.
+
 ## Build Notes
 
 - `wasm/pkg` should be committed for deployment.
+- `wasm/pkg/.gitignore` contains `*`, so Git ignores it by default — use `git add -f wasm/pkg` to force-add rebuilt output.
 - `wasm/target` should not be committed.
+- Rebuilding overwrites `wasm/pkg`; rebuild after changing Rust kernels:
+  `cd wasm && wasm-pack build --target web --release --no-opt`.
+- `--no-opt` skips the `wasm-opt` (Binaryen) optimization pass: faster builds
+  with no Binaryen dependency. Omit it for a smaller production binary.
 - The wasm build uses `rand 0.9` with `getrandom 0.3` configured for the browser `wasm_js` backend.
-- The wasm target config enables `simd128`; rebuild `wasm/pkg` after changing Rust kernels.
-- If results look stale, unregister the service worker in DevTools and hard refresh.
+- The wasm target config (`wasm/.cargo/config.toml`) enables `+simd128`
+  (`-C target-feature=+simd128`) plus `--cfg getrandom_backend="wasm_js"`;
+  keep both when rebuilding or SIMD/RNG kernels will regress or fail to build.
+
+### Methodology Footnote
+
+- WASM loop throughput ("clock") is display-only and excluded from the score.
+- Latency metrics (32KB/256KB/8MB/64MB random walks, branch predictable/random)
+  are lower-is-better and scored as `REF / value` against reference latencies
+  (ns/op) in `src/score.js` (`LATENCY_REFS`), so lower latency → higher sub-score.
+- Unit normalization before `log1p(x) * 1000`: compress/decompress MB/s → GB/s
+  (`/1000`), SHA-256 MH/s → normalized throughput (`/0.05` ref).
+- If a test fails (or yields a non-finite/non-positive value), its weight is
+  redistributed across the surviving tests; the export flags this with
+  `complete: false`, `skipped: [...]`, and `activeWeight < 1`.
+
+### Service Worker Versioning
+
+- Bump `SW_VERSION` in `sw.js` when changing cached assets or headers.
+- If results look stale: DevTools → Application → Service Workers → Unregister,
+  then hard refresh (Ctrl/Cmd+Shift+R). First install auto-reloads once so
+  COOP/COEP headers take effect.
 
 ## License
 

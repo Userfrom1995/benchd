@@ -1,13 +1,15 @@
-import { initScheduler, runBenchmark, onProgress, onResult } from '../scheduler.js';
+import { initScheduler, runBenchmark, onProgress, onResult, EXPECTED_STEPS, cancelBenchmark } from '../scheduler.js';
 import { computeFinalScore } from '../score.js';
 
 const els = {
     scoreValue: document.getElementById('score-value'),
     btnStart: document.getElementById('btn-start'),
+    btnCancel: document.getElementById('btn-cancel'),
     btnExport: document.getElementById('btn-export'),
     progressWrap: document.getElementById('progress-wrap'),
     progressLabel: document.getElementById('progress-label'),
     progressFill: document.getElementById('progress-fill'),
+    progressTrack: document.getElementById('progress-track'),
     browserInfo: document.getElementById('browser-info'),
     clockHero: document.getElementById('clock-speed-hero')
 };
@@ -31,9 +33,14 @@ const uiMap = {
     multicore: { peak: 'mc-aggregate', sustained: 'mc-efficiency' }
 };
 
+const METRIC_STATES = ['pending', 'active', 'done', 'error'];
+
 let currentProgress = 0;
-let totalCategories = 16;
+let totalCategories = EXPECTED_STEPS(
+    (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
+);
 let lastReport = null;
+let isRunning = false;
 
 function animateScore(target, duration = 1500) {
     const start = 0;
@@ -52,7 +59,7 @@ function animateScore(target, duration = 1500) {
     requestAnimationFrame(update);
 }
 
-function updateMetric(id, val, cls) {
+function updateMetric(id, val, cls = 'done') {
     const el = document.getElementById(id);
     if (!el) return;
     let text = '0.00';
@@ -60,7 +67,10 @@ function updateMetric(id, val, cls) {
         text = 'FAIL';
         cls = 'error';
     } else if (typeof val === 'number') {
-        if (val >= 1000) text = val.toFixed(0);
+        if (!Number.isFinite(val)) {
+            text = '—';
+            cls = 'error';
+        } else if (val >= 1000) text = val.toLocaleString(undefined, { maximumFractionDigits: 1 });
         else if (val >= 1) text = val.toFixed(2);
         else if (val > 0) text = val.toFixed(4);
         else text = '0.00';
@@ -68,13 +78,15 @@ function updateMetric(id, val, cls) {
         text = val;
     }
     el.textContent = text;
-    el.className = `metric__value ${cls}`;
+    if (!el.classList.contains('metric__value')) el.classList.add('metric__value');
+    el.classList.remove(...METRIC_STATES);
+    el.classList.add(cls);
 }
 
 function createResultReport(rawResults, score, cores) {
     return {
         app: 'BenchD',
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt: new Date().toISOString(),
         environment: {
             userAgent: navigator.userAgent,
@@ -84,6 +96,7 @@ function createResultReport(rawResults, score, cores) {
             sharedArrayBuffer: window.__benchd?.sabAvailable === true
         },
         score,
+        scoreInputs: score?.breakdown ?? {},
         results: rawResults
     };
 }
@@ -103,14 +116,33 @@ function downloadReport(report) {
     URL.revokeObjectURL(url);
 }
 
+function setProgress(pct, label) {
+    const clamped = Math.min(Math.max(pct, 0), 100);
+    if (els.progressFill) els.progressFill.style.width = `${clamped}%`;
+    if (els.progressTrack) els.progressTrack.setAttribute('aria-valuenow', String(Math.round(clamped)));
+    if (label !== undefined && els.progressLabel) els.progressLabel.textContent = label;
+}
+
 export function attachUI() {
+    if (els.btnCancel) {
+        els.btnCancel.addEventListener('click', () => {
+            if (isRunning) cancelBenchmark();
+        });
+    }
+
     els.btnStart.addEventListener('click', async () => {
+        if (isRunning) {
+            cancelBenchmark();
+            return;
+        }
+        isRunning = true;
         els.btnStart.disabled = true;
+        if (els.btnCancel) els.btnCancel.disabled = false;
         els.btnExport.disabled = true;
         els.btnStart.textContent = 'Running…';
         els.scoreValue.textContent = '0';
         els.progressWrap.classList.add('visible');
-        els.progressFill.style.width = '0%';
+        setProgress(0);
         currentProgress = 0;
         lastReport = null;
         els.clockHero.textContent = 'Measuring WASM Loop Throughput…';
@@ -121,26 +153,40 @@ export function attachUI() {
         });
 
         try {
-            els.progressLabel.textContent = 'Booting workers…';
+            setProgress(0, 'Booting workers…');
             const cores = window.__benchd?.cores || navigator.hardwareConcurrency || 4;
-            totalCategories = cores > 1 ? 17 : 16;
+            totalCategories = EXPECTED_STEPS(cores);
             await initScheduler(cores);
 
             const rawResults = await runBenchmark(cores);
-            const score = computeFinalScore(rawResults);
-            lastReport = createResultReport(rawResults, score, cores);
+            const safeResults = rawResults ?? {};
+            const score = computeFinalScore(safeResults);
+            lastReport = createResultReport(safeResults, score, cores);
 
-            els.progressLabel.textContent = 'Benchmark Complete';
-            els.progressFill.style.width = '100%';
+            if (!score.complete) {
+                const skippedCount = score.skipped?.length ?? 0;
+                setProgress(100, `Benchmark Complete (partial: ${skippedCount} skipped)`);
+            } else {
+                setProgress(100, 'Benchmark Complete');
+            }
             animateScore(score.total);
             els.btnExport.disabled = false;
 
         } catch (err) {
             console.error(err);
-            els.progressLabel.textContent = 'Error: ' + err.message;
+            if (err?.message === 'already-running') {
+                if (els.progressLabel) els.progressLabel.textContent = 'Benchmark already running…';
+            } else if (err?.message === 'cancelled') {
+                if (els.progressLabel) els.progressLabel.textContent = 'Benchmark cancelled.';
+                els.clockHero.textContent = 'Benchmark cancelled';
+            } else {
+                if (els.progressLabel) els.progressLabel.textContent = 'Error: ' + err.message;
+            }
         } finally {
+            isRunning = false;
             els.btnStart.disabled = false;
             els.btnStart.textContent = 'Run Again';
+            if (els.btnCancel) els.btnCancel.disabled = true;
         }
     });
 
@@ -152,15 +198,27 @@ export function attachUI() {
         if (detail.done) return;
         currentProgress++;
         const pct = Math.min((currentProgress / totalCategories) * 100, 98);
-        els.progressFill.style.width = `${pct}%`;
-        els.progressLabel.textContent = `Testing ${detail.name}…`;
+        setProgress(pct, `Testing ${detail.name}…`);
     });
 
     onResult((detail) => {
         const { categoryId, peak, sustained, efficiency, failed } = detail;
 
         if (categoryId === 'clock') {
-            els.clockHero.textContent = `${peak.toFixed(2)} GOPS WASM Loop Rate`;
+            const safePeak = Number.isFinite(peak) ? peak.toFixed(2) : '—';
+            let extra = '';
+            if (Number.isFinite(sustained)) extra += ` · sustained ${sustained.toFixed(2)}`;
+            if (Array.isArray(detail.samples) && detail.samples.length > 0) {
+                const finiteSamples = detail.samples.filter(Number.isFinite);
+                if (finiteSamples.length > 0) {
+                    const mn = Math.min(...finiteSamples);
+                    const mx = Math.max(...finiteSamples);
+                    if (Number.isFinite(mn) && Number.isFinite(mx)) {
+                        extra += ` (min ${mn.toFixed(2)} / max ${mx.toFixed(2)})`;
+                    }
+                }
+            }
+            els.clockHero.textContent = `${safePeak} GOPS WASM Loop Rate${extra}`;
             return;
         }
 
