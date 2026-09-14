@@ -37,16 +37,13 @@ BenchD is a browser benchmark, not a native hardware profiler. Results are usefu
 
 ## Beta Notice
 
-This is a beta release of the project.
+This is a beta release.
 
-Some benchmark tests may not yet behave exactly as intended, and there are known bugs across:
-
-- Benchmark/test logic
-- Rust/WASM kernels
-- Edge-case behavior in some categories
-- Cross-browser variance
-
-These issues will be fixed in subsequent releases.
+Results are best for same-browser/version/device comparisons — repeat 3×
+and compare medians. Short timed windows (~333ms), turbo/thermal behavior,
+background tabs, and browser differences (especially WebCrypto and timer
+granularity) add a few percent of run-to-run variance. See Run Variance and
+Methodology Footnote below.
 
 ## Contributions
 
