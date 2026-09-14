@@ -13,11 +13,15 @@ init().then(() => {
 });
 
 self.onmessage = async (e) => {
-    const { id, type, durationMs } = e.data;
-
-    if (!wasmReady) return;
-
+    const msg = e.data ?? {};
+    const id = msg.id;
+    const type = msg.type;
+    const durationMs = msg.durationMs;
     try {
+        if (!wasmReady) {
+            postMessage({ id, type: 'error', error: 'WASM not initialized' });
+            return;
+        }
         let result = { id, type: 'result', timeMs: 0, score: 0 };
         const start = performance.now();
         let now = start;

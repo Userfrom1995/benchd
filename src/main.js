@@ -3,6 +3,8 @@
  * Registers the Service Worker and verifies cross-origin isolation.
  */
 
+import { attachUI } from './ui/dashboard.js';
+
 // ── Service Worker Registration ────────────────────────────────────────────
 async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
@@ -20,25 +22,53 @@ async function registerServiceWorker() {
             console.log('[BenchD] Waiting for it to activate, then will reload to apply COOP/COEP headers…');
 
             // Wait until the newly installing SW transitions to activated state
-            await new Promise((resolve) => {
-                reg.installing.addEventListener('statechange', function handler(e) {
+            const activated = await new Promise((resolve) => {
+                const installingWorker = reg.installing;
+                if (!installingWorker) {
+                    resolve(false);
+                    return;
+                }
+                if (installingWorker.state === 'activated') {
+                    resolve(true);
+                    return;
+                }
+                const timeout = setTimeout(() => {
+                    console.warn('[BenchD] SW install wait timed out after 5s.');
+                    installingWorker.removeEventListener('statechange', handler);
+                    resolve(false);
+                }, 5000);
+                function handler(e) {
                     console.log(`[BenchD] SW state → ${e.target.state}`);
                     if (e.target.state === 'activated') {
-                        this.removeEventListener('statechange', handler);
-                        resolve();
+                        clearTimeout(timeout);
+                        installingWorker.removeEventListener('statechange', handler);
+                        resolve(true);
+                    } else if (e.target.state === 'redundant') {
+                        console.warn('[BenchD] SW became redundant during install.');
+                        clearTimeout(timeout);
+                        installingWorker.removeEventListener('statechange', handler);
+                        resolve(false);
                     }
-                });
+                }
+                installingWorker.addEventListener('statechange', handler);
             });
 
+            if (!activated) {
+                return true;
+            }
+
+            if (sessionStorage.getItem('benchd-sw-reloaded')) {
+                console.log('[BenchD] SW activated but reload already done this session — skipping reload.');
+                return true;
+            }
+            sessionStorage.setItem('benchd-sw-reloaded', '1');
             console.log('[BenchD] SW activated on first install — reloading page so headers take effect.');
             window.location.reload();
             return false; // execution stops here after reload
         }
 
         if (reg.waiting) {
-            console.log('[BenchD] SW is WAITING (new version pending). Reloading.');
-            window.location.reload();
-            return false;
+            console.log('[BenchD] SW is WAITING (new version pending).');
         }
 
         if (reg.active) {
@@ -61,7 +91,7 @@ function checkIsolation() {
     console.group('[BenchD] Cross-Origin Isolation Diagnostics');
     console.log('crossOriginIsolated    :', isolated);
     console.log('SharedArrayBuffer      :', sabExists ? 'available ✅' : 'NOT available ❌');
-    console.log('navigator.hardwareConcurrency:', navigator.hardwareConcurrency);
+    console.log('navigator.hardwareConcurrency:', navigator.hardwareConcurrency ?? 4);
 
     // Check response headers of the current page
     fetch(window.location.href)
@@ -83,26 +113,26 @@ function setStatus(msg, cls) {
     const el = document.getElementById('sab-status');
     if (!el) return;
     el.textContent = msg;
-    el.className = cls;
+    el.classList.remove('status-ok', 'status-warn', 'status-error');
+    if (cls) el.classList.add(cls);
 }
 
 function setBrowserInfo() {
     const el = document.getElementById('browser-info');
     if (!el) return;
-    el.textContent = `${navigator.userAgent.split(') ').pop().split(' ')[0]} · ${navigator.hardwareConcurrency} logical cores`;
+    const cores = navigator.hardwareConcurrency ?? 4;
+    el.textContent = `${navigator.userAgent.split(') ').pop().split(' ')[0]} · ${cores} logical cores`;
 }
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
-import { attachUI } from './ui/dashboard.js';
-
 async function init() {
     setStatus('⏳ Registering service worker…', '');
     setBrowserInfo();
 
-    await registerServiceWorker();
+    const ready = await registerServiceWorker();
+    if (!ready) return;
 
-    // Short delay — gives the SW time to claim the page after activation
-    await new Promise(r => setTimeout(r, 200));
+    await navigator.serviceWorker.ready;
 
     const { isolated, sabExists } = checkIsolation();
 
@@ -118,7 +148,7 @@ async function init() {
     window.__benchd = {
         sabAvailable: sabExists,
         crossOriginIsolated: isolated,
-        cores: navigator.hardwareConcurrency,
+        cores: navigator.hardwareConcurrency ?? 4,
     };
 
     console.log('[BenchD] window.__benchd:', window.__benchd);

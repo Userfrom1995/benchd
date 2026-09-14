@@ -11,6 +11,7 @@ const workers = {
 
 let isRunning = false;
 let testDurationMs = 2000; // 2 seconds per test
+let initPromise = null;
 
 const events = new EventTarget();
 
@@ -24,46 +25,150 @@ export function onResult(callback) {
 
 export async function initScheduler(cores) {
     if (workers.compute.length > 0) return; // Already inited
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+        cores = Math.min(Math.max(Math.floor(Number(cores))||4,1),8);
 
-    for (let i = 0; i < cores; i++) {
-        const w = new Worker(new URL('./workers/compute.worker.js', import.meta.url), { type: 'module' });
-        await waitForWorkerReady(w);
-        workers.compute.push(w);
+        const computeWorkers = [];
+        let memoryWorker = null;
+        let cryptoWorker = null;
+        try {
+            for (let i = 0; i < cores; i++) {
+                computeWorkers.push(new Worker(new URL('./workers/compute.worker.js', import.meta.url), { type: 'module' }));
+            }
+            memoryWorker = new Worker(new URL('./workers/memory.worker.js', import.meta.url), { type: 'module' });
+            cryptoWorker = new Worker(new URL('./workers/crypto.worker.js', import.meta.url), { type: 'module' });
+
+            await Promise.all([
+                ...computeWorkers.map((w) => waitForWorkerReady(w)),
+                waitForWorkerReady(memoryWorker),
+                waitForWorkerReady(cryptoWorker)
+            ]);
+
+            workers.compute.push(...computeWorkers);
+            workers.memory = memoryWorker;
+            workers.crypto = cryptoWorker;
+        } catch (err) {
+            for (const w of computeWorkers) {
+                try { w.terminate(); } catch { /* ignore */ }
+            }
+            if (memoryWorker) {
+                try { memoryWorker.terminate(); } catch { /* ignore */ }
+            }
+            if (cryptoWorker) {
+                try { cryptoWorker.terminate(); } catch { /* ignore */ }
+            }
+            workers.compute.length = 0;
+            workers.memory = null;
+            workers.crypto = null;
+            throw err;
+        }
+    })();
+    try {
+        await initPromise;
+    } catch (err) {
+        initPromise = null;
+        throw err;
     }
-
-    workers.memory = new Worker(new URL('./workers/memory.worker.js', import.meta.url), { type: 'module' });
-    await waitForWorkerReady(workers.memory);
-
-    workers.crypto = new Worker(new URL('./workers/crypto.worker.js', import.meta.url), { type: 'module' });
-    await waitForWorkerReady(workers.crypto);
 }
 
-function waitForWorkerReady(worker) {
+export function terminateScheduler() {
+    initPromise = null;
+    for (const w of workers.compute) {
+        try { w.terminate(); } catch { /* ignore */ }
+    }
+    workers.compute.length = 0;
+    if (workers.memory) {
+        try { workers.memory.terminate(); } catch { /* ignore */ }
+        workers.memory = null;
+    }
+    if (workers.crypto) {
+        try { workers.crypto.terminate(); } catch { /* ignore */ }
+        workers.crypto = null;
+    }
+}
+
+let taskIdCounter = 0;
+
+function waitForWorkerReady(worker, ms = 10000) {
     return new Promise((resolve, reject) => {
+        let settled = false;
+        const cleanup = () => {
+            clearTimeout(timer);
+            worker.removeEventListener('message', handler);
+            worker.removeEventListener('error', onError);
+        };
+        const settleResolve = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+        };
+        const settleReject = (err) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(err);
+        };
         const handler = (e) => {
             if (e.data.type === 'ready') {
-                worker.removeEventListener('message', handler);
-                resolve();
+                settleResolve();
             } else if (e.data.type === 'error') {
-                worker.removeEventListener('message', handler);
-                reject(new Error(e.data.error));
+                settleReject(new Error(e.data.error));
             }
         };
+        const onError = (err) => {
+            settleReject(err instanceof Error ? err : new Error(err?.message || 'worker error'));
+        };
+        const timer = setTimeout(() => {
+            settleReject(new Error('worker ready timeout'));
+        }, ms);
         worker.addEventListener('message', handler);
+        worker.addEventListener('error', onError);
     });
 }
 
-function runWorkerTask(worker, type, durationMs, sharedBuf = null) {
+function runWorkerTask(worker, type, durationMs, sharedBuf = null, timeoutMs = durationMs + 10000) {
     return new Promise((resolve, reject) => {
-        const id = Math.random().toString(36).substring(7);
+        const id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+            ? `${++taskIdCounter}-${crypto.randomUUID()}`
+            : `task-${++taskIdCounter}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        let settled = false;
+        const cleanup = () => {
+            clearTimeout(timer);
+            worker.removeEventListener('message', handler);
+            worker.removeEventListener('error', onError);
+        };
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error(`worker task timeout: ${type}`));
+        }, timeoutMs);
         const handler = (e) => {
             if (e.data.id !== id) return;
-            worker.removeEventListener('message', handler);
+            if (settled) return;
+            settled = true;
+            cleanup();
             if (e.data.type === 'error') reject(new Error(e.data.error));
             else resolve(e.data);
         };
+        const onError = (err) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(err instanceof Error ? err : new Error(err?.message || 'worker error'));
+        };
         worker.addEventListener('message', handler);
-        worker.postMessage({ id, type, durationMs, sharedBuf });
+        worker.addEventListener('error', onError);
+        try {
+            worker.postMessage({ id, type, durationMs, sharedBuf });
+        } catch (err) {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(err);
+        }
     });
 }
 
@@ -126,10 +231,14 @@ export async function runBenchmark(cores) {
         let clockPeak = 0;
         const clockProbes = [];
         const captureClockProbe = async (durationMs = 300) => {
-            const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
-            const value = res.gflops || res.score || 0;
-            if (value > clockPeak) clockPeak = value;
-            clockProbes.push({ durationMs, value, raw: res });
+            try {
+                const res = await runWorkerTask(workers.compute[0], 'clock', durationMs);
+                const value = res.gflops || res.score || 0;
+                if (value > clockPeak) clockPeak = value;
+                clockProbes.push({ durationMs, value, raw: res });
+            } catch (err) {
+                console.warn('[BenchD] clock probe failed, skipping:', err);
+            }
         };
 
         // Probe from start and keep tracking through the run.

@@ -3,7 +3,7 @@
    Dark theme, design system tokens, layout
    ===================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+/* no webfont: system fallback to avoid cross-origin COEP issues */
 
 /* ── Design Tokens ─────────────────────────────────────────────────── */
 :root {
